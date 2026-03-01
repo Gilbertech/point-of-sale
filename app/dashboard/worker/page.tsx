@@ -1,11 +1,5 @@
 'use client';
 // File: app/dashboard/worker/page.tsx
-// FIXES:
-// 1. createSalaryRecord now passes storeId → fixes NOT NULL constraint
-// 2. Managers can now approve/reject leave requests (canManage = isAdmin || isManager)
-// 3. Announcements use plain supabase insert → fixes net.http_post error
-// 4. Only admins (super_admin + admin) can delete workers
-// 5. Only admins can mark salary as paid or add salary records (managers cannot pay themselves)
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -112,13 +106,6 @@ const ANN_CONFIG: Record<AnnCategory, { color: string; icon: React.ReactNode }> 
   policy:   { color: 'bg-blue-100 text-blue-800',     icon: <Megaphone     className="w-3 h-3" /> },
   event:    { color: 'bg-green-100 text-green-800',   icon: <Bell          className="w-3 h-3" /> },
   training: { color: 'bg-purple-100 text-purple-800', icon: <Bell          className="w-3 h-3" /> },
-};
-
-const EMPTY_WORKER = {
-  firstName: '', lastName: '', email: '', phone: '',
-  role: 'cashier' as WorkerRole, department: '', salary: 0,
-  status: 'active' as const, joinDate: new Date().toISOString().split('T')[0],
-  storeId: '',
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -245,13 +232,30 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 }
 
 // ─── Worker Modal ─────────────────────────────────────────────────────────────
-function WorkerModal({ worker, stores, onClose, onSave }: {
-  worker: Worker | null; stores: Store[]; onClose: () => void; onSave: (d: any) => Promise<void>;
+// FIX: Removed branch selector — branch is auto-assigned from currentStore.
+// currentStoreName is shown as a read-only info badge so the user knows which
+// branch the worker will be assigned to.
+function WorkerModal({ worker, currentStore, onClose, onSave }: {
+  worker: Worker | null;
+  currentStore: Store | null;
+  onClose: () => void;
+  onSave: (d: any) => Promise<void>;
 }) {
   const [form, setForm] = useState(
     worker
-      ? { firstName: worker.firstName, lastName: worker.lastName, email: worker.email, phone: worker.phone ?? '', role: worker.role, department: worker.department ?? '', salary: worker.salary, status: worker.status, joinDate: worker.joinDate, storeId: worker.storeId ?? '' }
-      : EMPTY_WORKER
+      ? {
+          firstName: worker.firstName, lastName: worker.lastName,
+          email: worker.email, phone: worker.phone ?? '',
+          role: worker.role, department: worker.department ?? '',
+          salary: worker.salary, status: worker.status,
+          joinDate: worker.joinDate,
+        }
+      : {
+          firstName: '', lastName: '', email: '', phone: '',
+          role: 'cashier' as WorkerRole, department: '', salary: 0,
+          status: 'active' as const,
+          joinDate: new Date().toISOString().split('T')[0],
+        }
   );
   const [saving, setSaving] = useState(false);
   const set = (k: string, v: any) => setForm(p => ({ ...p, [k]: v }));
@@ -260,13 +264,27 @@ function WorkerModal({ worker, stores, onClose, onSave }: {
     e.preventDefault();
     if (!form.firstName || !form.lastName || !form.email) { alert('Name and email required.'); return; }
     setSaving(true);
-    await onSave({ ...form, storeId: form.storeId || null });
+    // ── Auto-assign storeId from currentStore — no manual selection needed ──
+    await onSave({ ...form, storeId: currentStore?.id ?? null });
     setSaving(false);
   };
 
   return (
     <Modal title={worker ? 'Edit Worker' : 'Add Worker'} onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+
+        {/* ── Auto-assigned branch indicator ── */}
+        <div className="flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-lg px-3 py-2.5">
+          <Building2 className="w-4 h-4 text-primary shrink-0" />
+          <div className="min-w-0">
+            <p className="text-xs text-muted-foreground">Branch (auto-assigned)</p>
+            <p className="text-sm font-semibold text-foreground truncate">
+              {currentStore ? currentStore.name : 'No branch selected — worker will be unassigned'}
+            </p>
+          </div>
+          {currentStore && <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0 ml-auto" />}
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
           {(['firstName', 'lastName'] as const).map(k => (
             <div key={k} className="space-y-1.5">
@@ -275,12 +293,14 @@ function WorkerModal({ worker, stores, onClose, onSave }: {
             </div>
           ))}
         </div>
+
         {[['Email *', 'email', 'email'], ['Phone', 'phone', 'tel'], ['Department', 'department', 'text']].map(([label, key, type]) => (
           <div key={key} className="space-y-1.5">
             <label className="text-sm font-medium text-muted-foreground">{label}</label>
             <Input type={type} value={(form as any)[key]} onChange={e => set(key, e.target.value)} className="border-border bg-input text-foreground" />
           </div>
         ))}
+
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-muted-foreground">Role</label>
@@ -298,6 +318,7 @@ function WorkerModal({ worker, stores, onClose, onSave }: {
             </select>
           </div>
         </div>
+
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-muted-foreground">Monthly Salary</label>
@@ -308,26 +329,14 @@ function WorkerModal({ worker, stores, onClose, onSave }: {
             <Input type="date" value={form.joinDate} onChange={e => set('joinDate', e.target.value)} className="border-border bg-input text-foreground" />
           </div>
         </div>
-        <div className="space-y-1.5">
-          <label className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
-            <Building2 className="w-3.5 h-3.5" /> Assign to Branch <span className="font-normal text-muted-foreground/70">(optional)</span>
-          </label>
-          <div className="relative">
-            <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-            <select value={form.storeId} onChange={e => set('storeId', e.target.value)} className="w-full pl-9 pr-4 h-10 text-sm border border-border bg-input text-foreground rounded-md focus:outline-none focus:ring-2 focus:ring-ring appearance-none">
-              <option value="">— No branch assigned —</option>
-              {stores.filter(s => s.isActive).map(s => (
-                <option key={s.id} value={s.id}>{s.name}{s.address ? ` — ${s.address}` : ''}</option>
-              ))}
-            </select>
-          </div>
-        </div>
+
         {worker && (
           <p className="text-xs text-muted-foreground flex items-center gap-1 bg-muted/50 rounded-lg px-3 py-2">
             <span className="w-3 h-3 rounded-full bg-blue-400 inline-block" />
             Role changes sync automatically to the linked login account.
           </p>
         )}
+
         <div className="flex gap-3 pt-2">
           <Button type="button" variant="outline" className="flex-1" onClick={onClose} disabled={saving}>Cancel</Button>
           <Button type="submit" className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90" disabled={saving}>
@@ -664,13 +673,10 @@ function AnnModal({ user, ann, storeId, onClose, onSuccess }: {
     setSaving(true); setError('');
     try {
       const payload = {
-        title:      form.title,
-        message:    form.message,
-        category:   form.category,
-        is_pinned:  form.isPinned,
-        expires_at: form.expiresAt || null,
+        title: form.title, message: form.message, category: form.category,
+        is_pinned: form.isPinned, expires_at: form.expiresAt || null,
         created_by: `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email,
-        store_id:   storeId,
+        store_id: storeId,
       };
       const { error: err } = ann
         ? await supabase.from('announcements').update(payload).eq('id', ann.id)
@@ -716,14 +722,14 @@ function AnnModal({ user, ann, storeId, onClose, onSuccess }: {
 type Tab = 'staff' | 'salary' | 'shifts' | 'attendance' | 'leave' | 'performance' | 'queries' | 'announcements';
 
 const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
-  { key: 'staff',         label: 'Staff',         icon: <Users                 className="w-4 h-4" /> },
-  { key: 'salary',        label: 'Salary',         icon: <DollarSign            className="w-4 h-4" /> },
-  { key: 'shifts',        label: 'Shifts',         icon: <CalendarDays          className="w-4 h-4" /> },
-  { key: 'attendance',    label: 'Attendance',     icon: <Clock                 className="w-4 h-4" /> },
-  { key: 'leave',         label: 'Leave',          icon: <Umbrella              className="w-4 h-4" /> },
-  { key: 'performance',   label: 'Performance',    icon: <TrendingUp            className="w-4 h-4" /> },
-  { key: 'queries',       label: 'Queries',        icon: <MessageCircleQuestion className="w-4 h-4" /> },
-  { key: 'announcements', label: 'Announcements',  icon: <Bell                  className="w-4 h-4" /> },
+  { key: 'staff',         label: 'Staff',        icon: <Users                 className="w-4 h-4" /> },
+  { key: 'salary',        label: 'Salary',        icon: <DollarSign            className="w-4 h-4" /> },
+  { key: 'shifts',        label: 'Shifts',        icon: <CalendarDays          className="w-4 h-4" /> },
+  { key: 'attendance',    label: 'Attendance',    icon: <Clock                 className="w-4 h-4" /> },
+  { key: 'leave',         label: 'Leave',         icon: <Umbrella              className="w-4 h-4" /> },
+  { key: 'performance',   label: 'Performance',   icon: <TrendingUp            className="w-4 h-4" /> },
+  { key: 'queries',       label: 'Queries',       icon: <MessageCircleQuestion className="w-4 h-4" /> },
+  { key: 'announcements', label: 'Announcements', icon: <Bell                  className="w-4 h-4" /> },
 ];
 
 export default function WorkersPage() {
@@ -731,11 +737,9 @@ export default function WorkersPage() {
   const { currentStore } = useStore();
   const storeId = currentStore?.id ?? null;
 
-  const isAdmin   = user?.role === 'super_admin' || user?.role === 'admin';
-  const isManager = user?.role === 'manager';
-  // canManage = admins AND managers (for leave/shifts/attendance/queries/announcements)
-  const canManage = isAdmin || isManager;
-  // canPaySalary = ONLY admins — managers cannot pay themselves or others
+  const isAdmin    = user?.role === 'super_admin' || user?.role === 'admin';
+  const isManager  = user?.role === 'manager';
+  const canManage  = isAdmin || isManager;
   const canPaySalary = isAdmin;
 
   if (!canManage) {
@@ -785,7 +789,7 @@ export default function WorkersPage() {
   const [currentWeek,     setCurrentWeek]     = useState(() => { const d = new Date(); d.setDate(d.getDate() - d.getDay()); return d; });
   const [credsModal,      setCredsModal]      = useState<{ email: string; password: string; name: string } | null>(null);
 
-  // ── Load all data filtered by current store ──────────────────────────────────
+  // ── Load data filtered by current store ────────────────────────────────────
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
@@ -879,7 +883,9 @@ export default function WorkersPage() {
         if (roleChanged) await syncRoleToAppUser(formData.email, formData.role);
       } else {
         const { worker, defaultPassword } = await createWorkerWithAccount({
-          ...formData, storeId: formData.storeId || storeId || null,
+          ...formData,
+          // ── storeId already set by WorkerModal from currentStore ──
+          storeId: formData.storeId,
         });
         setCredsModal({ email: worker.email, password: defaultPassword, name: `${worker.firstName} ${worker.lastName}` });
       }
@@ -1012,14 +1018,15 @@ export default function WorkersPage() {
         </div>
       </div>
 
+      {/* Stats */}
       <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
         {[
-          { label: 'Staff',         value: stats.total,                     color: 'text-foreground' },
-          { label: 'Active',        value: stats.active,                    color: 'text-green-600' },
-          { label: 'Payroll/Mo',    value: formatCurrency(stats.payroll),   color: 'text-primary' },
-          { label: "Today's Att.",  value: stats.todayAtt,                  color: 'text-blue-600' },
-          { label: 'Open Queries',  value: stats.openQueries,               color: 'text-red-600' },
-          { label: 'Pending Leave', value: stats.pendingLeave,              color: 'text-yellow-600' },
+          { label: 'Staff',         value: stats.total,                   color: 'text-foreground' },
+          { label: 'Active',        value: stats.active,                  color: 'text-green-600' },
+          { label: 'Payroll/Mo',    value: formatCurrency(stats.payroll), color: 'text-primary' },
+          { label: "Today's Att.",  value: stats.todayAtt,                color: 'text-blue-600' },
+          { label: 'Open Queries',  value: stats.openQueries,             color: 'text-red-600' },
+          { label: 'Pending Leave', value: stats.pendingLeave,            color: 'text-yellow-600' },
         ].map((m, i) => (
           <Card key={i} className="bg-card border-border">
             <CardContent className="pt-3 pb-3">
@@ -1030,6 +1037,7 @@ export default function WorkersPage() {
         ))}
       </div>
 
+      {/* Tabs */}
       <div className="flex border-b border-border gap-0 overflow-x-auto">
         {TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
@@ -1082,7 +1090,6 @@ export default function WorkersPage() {
                       <div className="flex gap-2">
                         <Button variant="outline" size="sm" className="flex-1" onClick={() => { setEditWorker(w); setShowWorkerModal(true); }}><Edit2 className="w-3.5 h-3.5 mr-1" />Edit</Button>
                         <Button size="sm" className="flex-1 bg-primary/10 text-primary hover:bg-primary/20 border-0" onClick={() => { loadSalary(w); setTab('salary'); }}><DollarSign className="w-3.5 h-3.5 mr-1" />Salary</Button>
-                        {/* ── FIX: Only admins (super_admin + admin) can delete workers ── */}
                         {isAdmin && (
                           <Button variant="ghost" size="sm" disabled={deletingId === w.id} onClick={() => handleDeleteWorker(w.id, `${w.firstName} ${w.lastName}`)} className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 px-2">
                             {deletingId === w.id ? <span className="w-4 h-4 border-2 border-destructive/40 border-t-destructive rounded-full animate-spin block" /> : <Trash2 className="w-4 h-4" />}
@@ -1117,18 +1124,11 @@ export default function WorkersPage() {
                     <CardTitle className="text-foreground">{selectedWorker.firstName} {selectedWorker.lastName}</CardTitle>
                     <CardDescription>{ROLE_LABELS[selectedWorker.role]} · {formatCurrency(selectedWorker.salary)}/month</CardDescription>
                   </div>
-                  {/* ── FIX: Only admins can add salary records — managers cannot pay themselves ── */}
                   {canPaySalary && (
                     <Button size="sm" onClick={async () => {
                       const m = new Date().toISOString().slice(0,7);
                       if (salaryRecords.find(r => r.month === m)) { alert('Record for this month exists.'); return; }
-                      await createSalaryRecord({
-                        workerId: selectedWorker.id,
-                        month: m,
-                        amount: selectedWorker.salary,
-                        status: 'pending',
-                        storeId: storeId,
-                      });
+                      await createSalaryRecord({ workerId: selectedWorker.id, month: m, amount: selectedWorker.salary, status: 'pending', storeId });
                       await loadSalary(selectedWorker);
                     }} className="gap-1 bg-primary text-primary-foreground hover:bg-primary/90"><Plus className="w-4 h-4" />Add This Month</Button>
                   )}
@@ -1148,7 +1148,6 @@ export default function WorkersPage() {
                             <td className="py-3 px-4 text-right font-bold text-foreground">{formatCurrency(rec.amount)}</td>
                             <td className="py-3 px-4"><Badge className={rec.status === 'paid' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}>{rec.status}</Badge></td>
                             <td className="py-3 px-4 text-muted-foreground">{rec.paidDate ?? '—'}</td>
-                            {/* ── FIX: Only admins can mark salary as paid ── */}
                             <td className="py-3 px-4">
                               {rec.status === 'pending' && canPaySalary && (
                                 <Button size="sm" variant="outline" onClick={async () => { await markSalaryPaid(rec.id); await loadSalary(selectedWorker); }} className="gap-1 text-green-700 border-green-300 hover:bg-green-50">
@@ -1481,7 +1480,8 @@ export default function WorkersPage() {
       )}
 
       {/* ── MODALS ── */}
-      {showWorkerModal && <WorkerModal worker={editWorker} stores={stores} onClose={() => { setShowWorkerModal(false); setEditWorker(null); }} onSave={handleSaveWorker} />}
+      {/* FIX: Pass currentStore instead of stores array — no branch dropdown in modal */}
+      {showWorkerModal && <WorkerModal worker={editWorker} currentStore={currentStore} onClose={() => { setShowWorkerModal(false); setEditWorker(null); }} onSave={handleSaveWorker} />}
       {showShiftModal  && <ShiftModal  workers={workers} shift={editShift}   storeId={storeId} onClose={() => { setShowShiftModal(false); setEditShift(null); }} onSuccess={loadAll} />}
       {showAttModal    && <AttModal    workers={workers} record={editAtt}    storeId={storeId} onClose={() => { setShowAttModal(false);   setEditAtt(null);   }} onSuccess={loadAll} />}
       {showLeaveModal  && <LeaveModal  user={user} workers={workers} req={editLeave} canManage={canManage} storeId={storeId} onClose={() => { setShowLeaveModal(false); setEditLeave(null); }} onSuccess={loadAll} />}
