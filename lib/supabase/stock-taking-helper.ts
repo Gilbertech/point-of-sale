@@ -2,11 +2,16 @@ import { supabase } from './client';
 
 // ─── Stock Sessions ───────────────────────────────────────────────────────────
 
-export const getAllStockSessions = async () => {
-  const { data, error } = await supabase
+export const getAllStockSessions = async (storeId?: string | null) => {
+  let query = supabase
     .from('stock_sessions')
     .select('*')
     .order('created_at', { ascending: false });
+
+  // ── FIX: Only return sessions for the current branch ──
+  if (storeId) query = query.eq('store_id', storeId);
+
+  const { data, error } = await query;
 
   if (error) {
     console.error('[v0] Error fetching stock sessions:', error);
@@ -29,14 +34,14 @@ export const getAllStockSessions = async () => {
 export const createStockSession = async (session: {
   name: string;
   createdBy: string;
-  storeId: string; // ✅ required
+  storeId: string;
 }) => {
   const { data, error } = await supabase
     .from('stock_sessions')
     .insert([{
       name: session.name,
       created_by: session.createdBy,
-      store_id: session.storeId, // ✅ saved to DB
+      store_id: session.storeId,
       status: 'in-progress',
       item_count: 0,
       discrepancies: 0,
@@ -95,7 +100,7 @@ export const saveStockCountItems = async (
     physicalCount: number;
     variance: number;
     notes?: string;
-    storeId: string; // ✅ required
+    storeId: string;
   }>
 ) => {
   const rows = items.map(item => ({
@@ -105,7 +110,7 @@ export const saveStockCountItems = async (
     physical_count: item.physicalCount,
     variance: item.variance,
     notes: item.notes || null,
-    store_id: item.storeId, // ✅ saved to DB
+    store_id: item.storeId,
   }));
 
   const { data, error } = await supabase

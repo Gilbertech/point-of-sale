@@ -57,17 +57,18 @@ export default function StockTakePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'counted' | 'discrepancy'>('all');
 
+  // ── FIX: Pass currentStore?.id so each branch only sees its own sessions ──
   const loadSessions = useCallback(async () => {
     setLoadingSessions(true);
     try {
-      const data = await getAllStockSessions();
+      const data = await getAllStockSessions(currentStore?.id ?? null);
       setSessions(data);
     } catch (error) {
       console.error('Error loading stock sessions:', error);
     } finally {
       setLoadingSessions(false);
     }
-  }, []);
+  }, [currentStore?.id]); // ← reloads automatically when branch changes
 
   useEffect(() => { loadSessions(); }, [loadSessions]);
 
@@ -89,7 +90,7 @@ export default function StockTakePage() {
       const session = await createStockSession({
         name,
         createdBy: displayName,
-        storeId: currentStore.id, // ✅
+        storeId: currentStore.id,
       });
 
       setActiveSessionId(session.id);
@@ -144,7 +145,7 @@ export default function StockTakePage() {
         physicalCount: r.physicalCount!,
         variance: r.physicalCount! - r.systemCount,
         notes: r.notes,
-        storeId: currentStore.id, // ✅ fixes stock_count_items.store_id NOT NULL
+        storeId: currentStore.id,
       }));
 
       await saveStockCountItems(activeSessionId, itemsToSave);
@@ -241,7 +242,9 @@ export default function StockTakePage() {
           {sessions.length === 0 ? (
             <Card className="bg-card border-border">
               <CardContent className="text-center py-12 text-muted-foreground">
-                No stock counts recorded yet. Start your first count above.
+                {currentStore
+                  ? `No stock counts recorded yet for ${currentStore.name}. Start your first count above.`
+                  : 'No stock counts recorded yet. Start your first count above.'}
               </CardContent>
             </Card>
           ) : (
