@@ -4,6 +4,8 @@
 // 1. createSalaryRecord now passes storeId → fixes NOT NULL constraint
 // 2. Managers can now approve/reject leave requests (canManage = isAdmin || isManager)
 // 3. Announcements use plain supabase insert → fixes net.http_post error
+// 4. Only admins (super_admin + admin) can delete workers
+// 5. Only admins can mark salary as paid or add salary records (managers cannot pay themselves)
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -550,7 +552,6 @@ function LeaveModal({ user, workers, req, canManage, storeId, onClose, onSuccess
               {(Object.keys(LEAVE_COLORS) as LeaveType[]).map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
-          {/* ── FIX: canManage includes managers, not just admins ── */}
           {canManage && req && (
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-muted-foreground">Status</label>
@@ -643,7 +644,6 @@ function QueryModal({ user, workers, storeId, onClose, onSuccess }: {
 }
 
 // ─── Announcement Modal ───────────────────────────────────────────────────────
-// FIX: Use plain supabase insert — no pg_net / net.http_post involved
 function AnnModal({ user, ann, storeId, onClose, onSuccess }: {
   user: any; ann?: Announcement | null; storeId: string | null;
   onClose: () => void; onSuccess: () => void;
@@ -663,7 +663,6 @@ function AnnModal({ user, ann, storeId, onClose, onSuccess }: {
     if (!form.title || !form.message) { setError('Title and message required.'); return; }
     setSaving(true); setError('');
     try {
-      // Plain insert — no triggers, no pg_net, no edge functions needed
       const payload = {
         title:      form.title,
         message:    form.message,
@@ -734,8 +733,10 @@ export default function WorkersPage() {
 
   const isAdmin   = user?.role === 'super_admin' || user?.role === 'admin';
   const isManager = user?.role === 'manager';
-  // FIX: canManage = both admins AND managers (managers should be able to manage their branch)
+  // canManage = admins AND managers (for leave/shifts/attendance/queries/announcements)
   const canManage = isAdmin || isManager;
+  // canPaySalary = ONLY admins — managers cannot pay themselves or others
+  const canPaySalary = isAdmin;
 
   if (!canManage) {
     return (
@@ -931,7 +932,6 @@ export default function WorkersPage() {
     await loadAll();
   };
 
-  // FIX: quickLeaveAction now usable by canManage (managers + admins)
   const quickLeaveAction = async (id: string, status: 'approved' | 'rejected') => {
     await supabase.from('leave_requests').update({
       status,
@@ -1082,7 +1082,8 @@ export default function WorkersPage() {
                       <div className="flex gap-2">
                         <Button variant="outline" size="sm" className="flex-1" onClick={() => { setEditWorker(w); setShowWorkerModal(true); }}><Edit2 className="w-3.5 h-3.5 mr-1" />Edit</Button>
                         <Button size="sm" className="flex-1 bg-primary/10 text-primary hover:bg-primary/20 border-0" onClick={() => { loadSalary(w); setTab('salary'); }}><DollarSign className="w-3.5 h-3.5 mr-1" />Salary</Button>
-                        {user?.role === 'super_admin' && (
+                        {/* ── FIX: Only admins (super_admin + admin) can delete workers ── */}
+                        {isAdmin && (
                           <Button variant="ghost" size="sm" disabled={deletingId === w.id} onClick={() => handleDeleteWorker(w.id, `${w.firstName} ${w.lastName}`)} className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 px-2">
                             {deletingId === w.id ? <span className="w-4 h-4 border-2 border-destructive/40 border-t-destructive rounded-full animate-spin block" /> : <Trash2 className="w-4 h-4" />}
                           </Button>
@@ -1116,19 +1117,21 @@ export default function WorkersPage() {
                     <CardTitle className="text-foreground">{selectedWorker.firstName} {selectedWorker.lastName}</CardTitle>
                     <CardDescription>{ROLE_LABELS[selectedWorker.role]} · {formatCurrency(selectedWorker.salary)}/month</CardDescription>
                   </div>
-                  {/* FIX: pass storeId to createSalaryRecord */}
-                  <Button size="sm" onClick={async () => {
-                    const m = new Date().toISOString().slice(0,7);
-                    if (salaryRecords.find(r => r.month === m)) { alert('Record for this month exists.'); return; }
-                    await createSalaryRecord({
-                      workerId: selectedWorker.id,
-                      month: m,
-                      amount: selectedWorker.salary,
-                      status: 'pending',
-                      storeId: storeId,  // ← FIX: was missing
-                    });
-                    await loadSalary(selectedWorker);
-                  }} className="gap-1 bg-primary text-primary-foreground hover:bg-primary/90"><Plus className="w-4 h-4" />Add This Month</Button>
+                  {/* ── FIX: Only admins can add salary records — managers cannot pay themselves ── */}
+                  {canPaySalary && (
+                    <Button size="sm" onClick={async () => {
+                      const m = new Date().toISOString().slice(0,7);
+                      if (salaryRecords.find(r => r.month === m)) { alert('Record for this month exists.'); return; }
+                      await createSalaryRecord({
+                        workerId: selectedWorker.id,
+                        month: m,
+                        amount: selectedWorker.salary,
+                        status: 'pending',
+                        storeId: storeId,
+                      });
+                      await loadSalary(selectedWorker);
+                    }} className="gap-1 bg-primary text-primary-foreground hover:bg-primary/90"><Plus className="w-4 h-4" />Add This Month</Button>
+                  )}
                 </div>
               </CardHeader>
               <CardContent>
@@ -1145,7 +1148,14 @@ export default function WorkersPage() {
                             <td className="py-3 px-4 text-right font-bold text-foreground">{formatCurrency(rec.amount)}</td>
                             <td className="py-3 px-4"><Badge className={rec.status === 'paid' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}>{rec.status}</Badge></td>
                             <td className="py-3 px-4 text-muted-foreground">{rec.paidDate ?? '—'}</td>
-                            <td className="py-3 px-4">{rec.status === 'pending' && <Button size="sm" variant="outline" onClick={async () => { await markSalaryPaid(rec.id); await loadSalary(selectedWorker); }} className="gap-1 text-green-700 border-green-300 hover:bg-green-50"><Check className="w-3.5 h-3.5" />Mark Paid</Button>}</td>
+                            {/* ── FIX: Only admins can mark salary as paid ── */}
+                            <td className="py-3 px-4">
+                              {rec.status === 'pending' && canPaySalary && (
+                                <Button size="sm" variant="outline" onClick={async () => { await markSalaryPaid(rec.id); await loadSalary(selectedWorker); }} className="gap-1 text-green-700 border-green-300 hover:bg-green-50">
+                                  <Check className="w-3.5 h-3.5" />Mark Paid
+                                </Button>
+                              )}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -1308,7 +1318,6 @@ export default function WorkersPage() {
                     {r.adminNotes && <p className="text-xs text-muted-foreground mt-1 italic">Admin: {r.adminNotes}</p>}
                   </div>
                   <div className="flex flex-col gap-1.5 items-end shrink-0">
-                    {/* FIX: canManage (managers + admins) can approve/reject leave */}
                     {canManage && r.status === 'pending' && (
                       <div className="flex gap-1">
                         <Button size="sm" className="bg-green-600 text-white hover:bg-green-700 h-7 text-xs" onClick={() => quickLeaveAction(r.id, 'approved')}><CheckCircle2 className="w-3 h-3 mr-1" />Approve</Button>
