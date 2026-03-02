@@ -128,7 +128,8 @@ function SupplierModal({ supplier, currentStore, stores, isAdmin, onClose, onSav
     address: supplier?.address ?? '', city: supplier?.city ?? '',
     country: supplier?.country ?? 'Kenya', category: supplier?.category ?? 'Dry Goods',
     status: supplier?.status ?? 'active' as 'active' | 'inactive',
-    notes: supplier?.notes ?? '', storeId: supplier?.storeId ?? currentStore?.id ?? '',
+    // ── Always use currentStore — no manual branch selection ──
+    notes: supplier?.notes ?? '', storeId: currentStore?.id ?? '',
     website: supplier?.website ?? '', taxPin: supplier?.taxPin ?? '',
     // Commercial
     paymentTerms: supplier?.paymentTerms ?? 'Net 30',
@@ -151,7 +152,8 @@ function SupplierModal({ supplier, currentStore, stores, isAdmin, onClose, onSav
       alert('Name, contact person and phone are required.'); return;
     }
     setSaving(true);
-    await onSave(form);
+    // Always assign to currentStore — storeId not user-editable
+    await onSave({ ...form, storeId: currentStore?.id ?? null });
     setSaving(false);
   };
 
@@ -163,22 +165,16 @@ function SupplierModal({ supplier, currentStore, stores, isAdmin, onClose, onSav
 
   return (
     <Modal title={supplier ? 'Edit Supplier' : 'Add New Supplier'} onClose={onClose} wide>
-      {/* Branch indicator */}
+      {/* Branch indicator — auto-assigned from currentStore, no manual selection */}
       <div className="flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-lg px-3 py-2 mb-4">
         <Store className="w-4 h-4 text-primary shrink-0" />
         <div className="flex-1 min-w-0">
-          <p className="text-xs text-muted-foreground">Branch</p>
+          <p className="text-xs text-muted-foreground">Branch (auto-assigned)</p>
           <p className="text-sm font-semibold text-foreground truncate">
-            {stores.find(s => s.id === form.storeId)?.name ?? currentStore?.name ?? 'Unassigned'}
+            {currentStore?.name ?? 'No branch selected — supplier will be unassigned'}
           </p>
         </div>
-        {isAdmin && (
-          <select value={form.storeId} onChange={e => set('storeId', e.target.value)}
-            className="text-xs h-8 px-2 border border-input rounded-md bg-background text-foreground focus:outline-none">
-            <option value="">All Stores</option>
-            {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-        )}
+        {currentStore && <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />}
       </div>
 
       {/* Section tabs */}
