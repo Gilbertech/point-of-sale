@@ -34,7 +34,7 @@ const NAVIGATION_ITEMS = [
 ];
 
 // Roles that can freely switch stores (everyone else is locked to their assigned store)
-const CAN_SWITCH_STORE = ['super_admin', 'admin'];
+const CAN_SWITCH_STORE = ['super_admin'];
 
 interface SidebarNavProps {
   isOpen: boolean;
