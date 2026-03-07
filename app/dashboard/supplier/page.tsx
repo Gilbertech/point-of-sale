@@ -1,7 +1,7 @@
 'use client';
 // File: app/dashboard/supplier/page.tsx
-// Comprehensive supplier management — profile cards, order history, performance,
-// contact log, documents, spend analytics, and full CRUD.
+// FIX: All roles (including admin/super_admin) are filtered to currentStore branch.
+// Admins can still see ALL suppliers via the "All Branches" toggle.
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,7 +16,7 @@ import {
   MessageSquare, Clock, ExternalLink, ShoppingCart, AlertTriangle,
   CheckCircle2, XCircle, Filter, ArrowUpDown, Building2, Hash,
   Paperclip, Send, Eye, MoreVertical, Activity, Zap, Award,
-  RefreshCw, Download,
+  RefreshCw, Download, Layers,
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/currency';
 import { useAuth } from '@/lib/auth-context';
@@ -45,7 +45,8 @@ interface Supplier {
 
 interface SupplierOrder {
   id: string; supplierId: string; orderNumber: string; orderDate: string;
-  expectedDate: string; deliveredDate: string | null; status: 'pending' | 'ordered' | 'delivered' | 'cancelled' | 'partial';
+  expectedDate: string; deliveredDate: string | null;
+  status: 'pending' | 'ordered' | 'delivered' | 'cancelled' | 'partial';
   items: { productName: string; qty: number; unitPrice: number; total: number }[];
   totalAmount: number; notes: string; createdAt: Date;
 }
@@ -61,7 +62,6 @@ const CATEGORIES = [
   'Produce', 'Beverages', 'Dry Goods', 'Dairy',
   'Meat & Poultry', 'Household', 'Stationery', 'Electronics', 'Other',
 ];
-
 const PAYMENT_TERMS = ['Cash on Delivery', 'Net 7', 'Net 14', 'Net 30', 'Net 60', 'Prepaid'];
 
 const ORDER_STATUS_CONFIG = {
@@ -73,21 +73,22 @@ const ORDER_STATUS_CONFIG = {
 };
 
 const CONTACT_TYPE_CONFIG = {
-  call:     { color: 'bg-green-100 text-green-800',  icon: <Phone className="w-3 h-3" /> },
-  email:    { color: 'bg-blue-100 text-blue-800',    icon: <Mail className="w-3 h-3" /> },
-  meeting:  { color: 'bg-purple-100 text-purple-800',icon: <MessageSquare className="w-3 h-3" /> },
-  whatsapp: { color: 'bg-teal-100 text-teal-800',    icon: <MessageSquare className="w-3 h-3" /> },
+  call:     { color: 'bg-green-100 text-green-800',   icon: <Phone className="w-3 h-3" /> },
+  email:    { color: 'bg-blue-100 text-blue-800',     icon: <Mail className="w-3 h-3" /> },
+  meeting:  { color: 'bg-purple-100 text-purple-800', icon: <MessageSquare className="w-3 h-3" /> },
+  whatsapp: { color: 'bg-teal-100 text-teal-800',     icon: <MessageSquare className="w-3 h-3" /> },
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-// STAR RATING
+// HELPERS
 // ══════════════════════════════════════════════════════════════════════════════
 
 function StarRating({ value, onChange, readOnly }: { value: number; onChange?: (v: number) => void; readOnly?: boolean }) {
   return (
     <div className="flex gap-0.5">
       {[1,2,3,4,5].map(i => (
-        <button key={i} type="button" onClick={() => !readOnly && onChange?.(i)} className={readOnly ? 'cursor-default' : 'cursor-pointer'}>
+        <button key={i} type="button" onClick={() => !readOnly && onChange?.(i)}
+          className={readOnly ? 'cursor-default' : 'cursor-pointer'}>
           <Star className={`w-4 h-4 ${i <= value ? 'fill-amber-400 text-amber-400' : 'text-gray-300'}`} />
         </button>
       ))}
@@ -95,11 +96,9 @@ function StarRating({ value, onChange, readOnly }: { value: number; onChange?: (
   );
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// MODAL WRAPPER
-// ══════════════════════════════════════════════════════════════════════════════
-
-function Modal({ title, onClose, wide, children }: { title: string; onClose: () => void; wide?: boolean; children: React.ReactNode }) {
+function Modal({ title, onClose, wide, children }: {
+  title: string; onClose: () => void; wide?: boolean; children: React.ReactNode;
+}) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 overflow-y-auto">
       <Card className={`w-full ${wide ? 'max-w-3xl' : 'max-w-xl'} bg-card border-border shadow-2xl my-4`}>
@@ -114,7 +113,7 @@ function Modal({ title, onClose, wide, children }: { title: string; onClose: () 
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// SUPPLIER FORM MODAL — comprehensive fields
+// SUPPLIER FORM MODAL
 // ══════════════════════════════════════════════════════════════════════════════
 
 function SupplierModal({ supplier, currentStore, stores, isAdmin, onClose, onSave }: {
@@ -122,24 +121,19 @@ function SupplierModal({ supplier, currentStore, stores, isAdmin, onClose, onSav
   isAdmin: boolean; onClose: () => void; onSave: (d: any) => Promise<void>;
 }) {
   const [form, setForm] = useState({
-    // Basic
     name: supplier?.name ?? '', contactPerson: supplier?.contactPerson ?? '',
     email: supplier?.email ?? '', phone: supplier?.phone ?? '',
     address: supplier?.address ?? '', city: supplier?.city ?? '',
     country: supplier?.country ?? 'Kenya', category: supplier?.category ?? 'Dry Goods',
     status: supplier?.status ?? 'active' as 'active' | 'inactive',
-    // ── Always use currentStore — no manual branch selection ──
     notes: supplier?.notes ?? '', storeId: currentStore?.id ?? '',
     website: supplier?.website ?? '', taxPin: supplier?.taxPin ?? '',
-    // Commercial
     paymentTerms: supplier?.paymentTerms ?? 'Net 30',
     leadTimeDays: supplier?.leadTimeDays ?? 7,
     minOrderValue: supplier?.minOrderValue ?? 0,
     rating: supplier?.rating ?? 0,
-    // Banking
     bankName: supplier?.bankName ?? '', bankAccount: supplier?.bankAccount ?? '',
     bankBranch: supplier?.bankBranch ?? '',
-    // Stats (admin only)
     totalSpent: supplier?.totalSpent ?? 0,
     lastOrderDate: supplier?.lastOrderDate ?? '',
   });
@@ -152,7 +146,6 @@ function SupplierModal({ supplier, currentStore, stores, isAdmin, onClose, onSav
       alert('Name, contact person and phone are required.'); return;
     }
     setSaving(true);
-    // Always assign to currentStore — storeId not user-editable
     await onSave({ ...form, storeId: currentStore?.id ?? null });
     setSaving(false);
   };
@@ -165,7 +158,7 @@ function SupplierModal({ supplier, currentStore, stores, isAdmin, onClose, onSav
 
   return (
     <Modal title={supplier ? 'Edit Supplier' : 'Add New Supplier'} onClose={onClose} wide>
-      {/* Branch indicator — auto-assigned from currentStore, no manual selection */}
+      {/* Branch indicator */}
       <div className="flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-lg px-3 py-2 mb-4">
         <Store className="w-4 h-4 text-primary shrink-0" />
         <div className="flex-1 min-w-0">
@@ -187,7 +180,6 @@ function SupplierModal({ supplier, currentStore, stores, isAdmin, onClose, onSav
         ))}
       </div>
 
-      {/* ── BASIC INFO ── */}
       {section === 'basic' && (
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
@@ -257,7 +249,6 @@ function SupplierModal({ supplier, currentStore, stores, isAdmin, onClose, onSav
         </div>
       )}
 
-      {/* ── COMMERCIAL ── */}
       {section === 'commercial' && (
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
@@ -289,7 +280,6 @@ function SupplierModal({ supplier, currentStore, stores, isAdmin, onClose, onSav
               </>
             )}
           </div>
-
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
             <p className="text-xs font-semibold text-amber-800 mb-1 flex items-center gap-1"><Zap className="w-3 h-3" />Commercial Summary</p>
             <div className="grid grid-cols-3 gap-2 text-center">
@@ -310,11 +300,10 @@ function SupplierModal({ supplier, currentStore, stores, isAdmin, onClose, onSav
         </div>
       )}
 
-      {/* ── BANKING ── */}
       {section === 'banking' && (
         <div className="space-y-3">
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-2">
-            <p className="text-xs text-blue-700">Banking details are used for payment processing and reconciliation. Keep this information confidential.</p>
+            <p className="text-xs text-blue-700">Banking details are used for payment processing and reconciliation.</p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5 col-span-2">
@@ -372,13 +361,10 @@ function OrderModal({ supplier, order, storeId, onClose, onSuccess }: {
   const updateItem = (i: number, k: string, v: any) => {
     const items = [...form.items];
     items[i] = { ...items[i], [k]: v };
-    if (k === 'qty' || k === 'unitPrice') {
-      items[i].total = items[i].qty * items[i].unitPrice;
-    }
+    if (k === 'qty' || k === 'unitPrice') items[i].total = items[i].qty * items[i].unitPrice;
     setForm(p => ({ ...p, items }));
   };
-
-  const addItem = () => setForm(p => ({ ...p, items: [...p.items, { productName: '', qty: 1, unitPrice: 0, total: 0 }] }));
+  const addItem    = () => setForm(p => ({ ...p, items: [...p.items, { productName: '', qty: 1, unitPrice: 0, total: 0 }] }));
   const removeItem = (i: number) => setForm(p => ({ ...p, items: p.items.filter((_, idx) => idx !== i) }));
   const totalAmount = form.items.reduce((a, i) => a + i.total, 0);
 
@@ -387,16 +373,11 @@ function OrderModal({ supplier, order, storeId, onClose, onSuccess }: {
     setSaving(true);
     try {
       const payload = {
-        supplier_id: supplier.id,
-        order_number: form.orderNumber,
-        order_date: form.orderDate,
-        expected_date: form.expectedDate || null,
-        delivered_date: form.deliveredDate || null,
-        status: form.status,
-        items: form.items,
-        total_amount: totalAmount,
-        notes: form.notes || null,
-        store_id: storeId,
+        supplier_id: supplier.id, order_number: form.orderNumber,
+        order_date: form.orderDate, expected_date: form.expectedDate || null,
+        delivered_date: form.deliveredDate || null, status: form.status,
+        items: form.items, total_amount: totalAmount,
+        notes: form.notes || null, store_id: storeId,
       };
       const { error } = order
         ? await supabase.from('supplier_orders').update(payload).eq('id', order.id)
@@ -438,7 +419,6 @@ function OrderModal({ supplier, order, storeId, onClose, onSuccess }: {
           )}
         </div>
 
-        {/* Line items */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Order Items</label>
@@ -469,7 +449,11 @@ function OrderModal({ supplier, order, storeId, onClose, onSuccess }: {
                     </td>
                     <td className="py-1.5 px-3 text-right text-xs font-medium text-foreground">{formatCurrency(item.total)}</td>
                     <td className="py-1.5 px-1">
-                      {form.items.length > 1 && <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={() => removeItem(i)}><X className="w-3 h-3" /></Button>}
+                      {form.items.length > 1 && (
+                        <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={() => removeItem(i)}>
+                          <X className="w-3 h-3" />
+                        </Button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -522,13 +506,10 @@ function ContactLogModal({ supplier, storeId, user, onClose, onSuccess }: {
     setSaving(true);
     try {
       const { error } = await supabase.from('supplier_contacts').insert([{
-        supplier_id: supplier.id,
-        type: form.type,
-        subject: form.subject,
+        supplier_id: supplier.id, type: form.type, subject: form.subject,
         notes: form.notes,
         contacted_by: `${user?.firstName ?? ''} ${user?.lastName ?? ''}`.trim() || user?.email,
-        contacted_at: new Date(form.contactedAt).toISOString(),
-        store_id: storeId,
+        contacted_at: new Date(form.contactedAt).toISOString(), store_id: storeId,
       }]);
       if (error) throw new Error(error.message);
       onSuccess(); onClose();
@@ -561,7 +542,8 @@ function ContactLogModal({ supplier, storeId, user, onClose, onSuccess }: {
         </div>
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-muted-foreground">Notes *</label>
-          <textarea rows={4} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="What was discussed, agreed, or actioned..."
+          <textarea rows={4} value={form.notes} onChange={e => set('notes', e.target.value)}
+            placeholder="What was discussed, agreed, or actioned..."
             className="w-full px-3 py-2 text-sm border border-border bg-input text-foreground rounded-md focus:outline-none resize-none" />
         </div>
         <div className="flex gap-3 pt-2">
@@ -620,14 +602,13 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
   useEffect(() => { loadSupplierData(); }, [loadSupplierData]);
 
   const orderStats = useMemo(() => ({
-    total: orders.length,
+    total:    orders.length,
     delivered: orders.filter(o => o.status === 'delivered').length,
-    pending: orders.filter(o => ['pending','ordered'].includes(o.status)).length,
+    pending:   orders.filter(o => ['pending','ordered'].includes(o.status)).length,
     totalSpend: orders.filter(o => o.status === 'delivered').reduce((a, o) => a + o.totalAmount, 0),
     avgOrderValue: orders.length > 0 ? orders.reduce((a, o) => a + o.totalAmount, 0) / orders.length : 0,
   }), [orders]);
 
-  // Monthly spend for sparkline
   const monthlySpend = useMemo(() => {
     const map: Record<string, number> = {};
     orders.filter(o => o.status === 'delivered').forEach(o => {
@@ -638,15 +619,14 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
   }, [orders]);
 
   const TABS_CONFIG = [
-    { key: 'overview', label: 'Overview' },
-    { key: 'orders',   label: `Orders${orders.length > 0 ? ` (${orders.length})` : ''}` },
-    { key: 'contacts', label: `Contacts${contacts.length > 0 ? ` (${contacts.length})` : ''}` },
+    { key: 'overview',  label: 'Overview' },
+    { key: 'orders',    label: `Orders${orders.length > 0 ? ` (${orders.length})` : ''}` },
+    { key: 'contacts',  label: `Contacts${contacts.length > 0 ? ` (${contacts.length})` : ''}` },
     { key: 'analytics', label: 'Analytics' },
   ] as const;
 
   return (
     <div className="flex flex-col h-full bg-card border border-border rounded-xl overflow-hidden">
-      {/* Panel header */}
       <div className="flex items-start justify-between p-4 border-b border-border bg-gradient-to-r from-primary/5 to-transparent">
         <div className="flex items-start gap-3">
           <div className="w-12 h-12 rounded-xl bg-primary/10 text-primary font-bold text-lg flex items-center justify-center shrink-0">
@@ -656,9 +636,7 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
             <h2 className="font-bold text-foreground text-base leading-tight">{supplier.name}</h2>
             <p className="text-sm text-muted-foreground">{supplier.contactPerson}</p>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
-              <Badge className={`text-xs ${supplier.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-muted text-muted-foreground'}`}>
-                {supplier.status}
-              </Badge>
+              <Badge className={`text-xs ${supplier.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-muted text-muted-foreground'}`}>{supplier.status}</Badge>
               <Badge variant="outline" className="text-xs">{supplier.category}</Badge>
               {storeName && <Badge className="bg-primary/10 text-primary text-xs">{storeName}</Badge>}
             </div>
@@ -670,7 +648,6 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
         </div>
       </div>
 
-      {/* Tab bar */}
       <div className="flex border-b border-border px-4">
         {TABS_CONFIG.map(t => (
           <button key={t.key} onClick={() => setTab(t.key as Tab)}
@@ -680,17 +657,13 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
         ))}
       </div>
 
-      {/* Tab content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-
-        {/* ── OVERVIEW ── */}
         {tab === 'overview' && (
           <div className="space-y-4">
-            {/* Quick stats */}
             <div className="grid grid-cols-3 gap-2">
               {[
-                { label: 'Orders',    value: orderStats.total,                        icon: <ShoppingCart className="w-4 h-4" />, color: 'text-blue-600' },
-                { label: 'Delivered', value: orderStats.delivered,                    icon: <CheckCircle2 className="w-4 h-4" />, color: 'text-green-600' },
+                { label: 'Orders',      value: orderStats.total,                      icon: <ShoppingCart className="w-4 h-4" />, color: 'text-blue-600' },
+                { label: 'Delivered',   value: orderStats.delivered,                  icon: <CheckCircle2 className="w-4 h-4" />, color: 'text-green-600' },
                 { label: 'Total Spent', value: formatCurrency(supplier.totalSpent),   icon: <DollarSign className="w-4 h-4" />,   color: 'text-primary' },
               ].map((m, i) => (
                 <div key={i} className="bg-muted/50 rounded-lg p-3 text-center">
@@ -700,35 +673,15 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
                 </div>
               ))}
             </div>
-
-            {/* Contact info */}
             <div className="space-y-2">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Contact</p>
               <div className="space-y-1.5">
-                {supplier.phone && (
-                  <a href={`tel:${supplier.phone}`} className="flex items-center gap-2 text-sm text-foreground hover:text-primary transition-colors group">
-                    <Phone className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary" />{supplier.phone}
-                  </a>
-                )}
-                {supplier.email && (
-                  <a href={`mailto:${supplier.email}`} className="flex items-center gap-2 text-sm text-foreground hover:text-primary transition-colors group">
-                    <Mail className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary" />{supplier.email}
-                  </a>
-                )}
-                {supplier.website && (
-                  <a href={supplier.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-foreground hover:text-primary transition-colors group">
-                    <Globe className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary" />{supplier.website}<ExternalLink className="w-3 h-3 ml-1" />
-                  </a>
-                )}
-                {(supplier.city || supplier.address) && (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <MapPin className="w-3.5 h-3.5" />{[supplier.address, supplier.city, supplier.country].filter(Boolean).join(', ')}
-                  </div>
-                )}
+                {supplier.phone && <a href={`tel:${supplier.phone}`} className="flex items-center gap-2 text-sm text-foreground hover:text-primary transition-colors group"><Phone className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary" />{supplier.phone}</a>}
+                {supplier.email && <a href={`mailto:${supplier.email}`} className="flex items-center gap-2 text-sm text-foreground hover:text-primary transition-colors group"><Mail className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary" />{supplier.email}</a>}
+                {supplier.website && <a href={supplier.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-foreground hover:text-primary transition-colors group"><Globe className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary" />{supplier.website}<ExternalLink className="w-3 h-3 ml-1" /></a>}
+                {(supplier.city || supplier.address) && <div className="flex items-center gap-2 text-sm text-muted-foreground"><MapPin className="w-3.5 h-3.5" />{[supplier.address, supplier.city, supplier.country].filter(Boolean).join(', ')}</div>}
               </div>
             </div>
-
-            {/* Commercial details */}
             <div className="space-y-2">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Commercial</p>
               <div className="grid grid-cols-2 gap-2">
@@ -745,24 +698,8 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
                 ))}
               </div>
             </div>
-
-            {/* Rating */}
-            {(supplier.rating ?? 0) > 0 && (
-              <div className="space-y-1">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Supplier Rating</p>
-                <StarRating value={supplier.rating ?? 0} readOnly />
-              </div>
-            )}
-
-            {/* Notes */}
-            {supplier.notes && (
-              <div className="space-y-1">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Notes</p>
-                <p className="text-sm text-foreground bg-muted/40 rounded-lg px-3 py-2 leading-relaxed">{supplier.notes}</p>
-              </div>
-            )}
-
-            {/* Banking (admin only) */}
+            {(supplier.rating ?? 0) > 0 && <div className="space-y-1"><p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Rating</p><StarRating value={supplier.rating ?? 0} readOnly /></div>}
+            {supplier.notes && <div className="space-y-1"><p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Notes</p><p className="text-sm text-foreground bg-muted/40 rounded-lg px-3 py-2 leading-relaxed">{supplier.notes}</p></div>}
             {isAdmin && supplier.bankName && (
               <div className="space-y-1">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Banking</p>
@@ -775,7 +712,6 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
           </div>
         )}
 
-        {/* ── ORDERS ── */}
         {tab === 'orders' && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -784,17 +720,15 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
                 <span>Delivered: <strong className="text-green-600">{orderStats.delivered}</strong></span>
               </div>
               {canEdit && (
-                <Button size="sm" onClick={() => { setEditOrder(null); setShowOrderModal(true); }} className="gap-1 bg-primary text-primary-foreground hover:bg-primary/90 h-7 text-xs">
+                <Button size="sm" onClick={() => { setEditOrder(null); setShowOrderModal(true); }}
+                  className="gap-1 bg-primary text-primary-foreground hover:bg-primary/90 h-7 text-xs">
                   <Plus className="w-3 h-3" />New PO
                 </Button>
               )}
             </div>
-            {loading ? (
-              <div className="text-center py-6"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mx-auto" /></div>
-            ) : orders.length === 0 ? (
-              <div className="text-center py-10 text-muted-foreground text-sm">No orders yet. Create your first purchase order.</div>
-            ) : (
-              orders.map(o => {
+            {loading ? <div className="text-center py-6"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mx-auto" /></div>
+              : orders.length === 0 ? <div className="text-center py-10 text-muted-foreground text-sm">No orders yet.</div>
+              : orders.map(o => {
                 const sc = ORDER_STATUS_CONFIG[o.status];
                 return (
                   <div key={o.id} className="border border-border rounded-lg p-3 hover:bg-muted/30 transition-colors cursor-pointer"
@@ -817,27 +751,23 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
                     )}
                   </div>
                 );
-              })
-            )}
+              })}
           </div>
         )}
 
-        {/* ── CONTACTS ── */}
         {tab === 'contacts' && (
           <div className="space-y-3">
             <div className="flex justify-end">
               {canEdit && (
-                <Button size="sm" onClick={() => setShowContactModal(true)} className="gap-1 bg-primary text-primary-foreground hover:bg-primary/90 h-7 text-xs">
+                <Button size="sm" onClick={() => setShowContactModal(true)}
+                  className="gap-1 bg-primary text-primary-foreground hover:bg-primary/90 h-7 text-xs">
                   <Plus className="w-3 h-3" />Log Contact
                 </Button>
               )}
             </div>
-            {loading ? (
-              <div className="text-center py-6"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mx-auto" /></div>
-            ) : contacts.length === 0 ? (
-              <div className="text-center py-10 text-muted-foreground text-sm">No contact history yet.</div>
-            ) : (
-              contacts.map(c => {
+            {loading ? <div className="text-center py-6"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mx-auto" /></div>
+              : contacts.length === 0 ? <div className="text-center py-10 text-muted-foreground text-sm">No contact history yet.</div>
+              : contacts.map(c => {
                 const cfg = CONTACT_TYPE_CONFIG[c.type];
                 return (
                   <div key={c.id} className="border border-border rounded-lg p-3">
@@ -854,20 +784,17 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
                     </div>
                   </div>
                 );
-              })
-            )}
+              })}
           </div>
         )}
 
-        {/* ── ANALYTICS ── */}
         {tab === 'analytics' && (
           <div className="space-y-4">
-            {/* KPI grid */}
             <div className="grid grid-cols-2 gap-2">
               {[
-                { label: 'Lifetime Spend',   value: formatCurrency(supplier.totalSpent),              icon: <DollarSign className="w-4 h-4" />,  color: 'text-primary',    bg: 'bg-primary/10' },
-                { label: 'Avg Order Value',  value: formatCurrency(orderStats.avgOrderValue),         icon: <BarChart2 className="w-4 h-4" />,    color: 'text-blue-600',   bg: 'bg-blue-50' },
-                { label: 'Total Orders',     value: orderStats.total,                                 icon: <ShoppingCart className="w-4 h-4" />, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+                { label: 'Lifetime Spend',   value: formatCurrency(supplier.totalSpent),          icon: <DollarSign className="w-4 h-4" />,   color: 'text-primary',    bg: 'bg-primary/10' },
+                { label: 'Avg Order Value',  value: formatCurrency(orderStats.avgOrderValue),     icon: <BarChart2 className="w-4 h-4" />,     color: 'text-blue-600',   bg: 'bg-blue-50' },
+                { label: 'Total Orders',     value: orderStats.total,                             icon: <ShoppingCart className="w-4 h-4" />,  color: 'text-indigo-600', bg: 'bg-indigo-50' },
                 { label: 'Fulfillment Rate', value: orderStats.total > 0 ? `${Math.round(orderStats.delivered / orderStats.total * 100)}%` : '—', icon: <Award className="w-4 h-4" />, color: 'text-green-600', bg: 'bg-green-50' },
               ].map((m, i) => (
                 <div key={i} className={`${m.bg} rounded-lg p-3`}>
@@ -877,8 +804,6 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
                 </div>
               ))}
             </div>
-
-            {/* Monthly spend chart */}
             {monthlySpend.length > 0 && (
               <div className="space-y-2">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Monthly Spend (Last 6 months)</p>
@@ -889,10 +814,8 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
                       <div key={month} className="flex items-center gap-2">
                         <span className="text-[10px] text-muted-foreground w-14 shrink-0">{month.slice(5)} {month.slice(0,4)}</span>
                         <div className="flex-1 bg-muted rounded-full h-5 overflow-hidden">
-                          <div
-                            className="h-full bg-primary rounded-full flex items-center justify-end pr-2 transition-all duration-500"
-                            style={{ width: `${Math.max((amount / max) * 100, 4)}%` }}
-                          >
+                          <div className="h-full bg-primary rounded-full flex items-center justify-end pr-2 transition-all duration-500"
+                            style={{ width: `${Math.max((amount / max) * 100, 4)}%` }}>
                             <span className="text-[9px] text-primary-foreground font-medium whitespace-nowrap">{formatCurrency(amount)}</span>
                           </div>
                         </div>
@@ -902,8 +825,6 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
                 </div>
               </div>
             )}
-
-            {/* Order status breakdown */}
             {orders.length > 0 && (
               <div className="space-y-2">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Order Status Breakdown</p>
@@ -926,31 +847,23 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
                 </div>
               </div>
             )}
-
             {orders.length === 0 && (
               <div className="text-center py-8 text-muted-foreground text-sm">
-                <BarChart2 className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                No order data yet. Create purchase orders to see analytics.
+                <BarChart2 className="w-8 h-8 mx-auto mb-2 opacity-30" />No order data yet.
               </div>
             )}
           </div>
         )}
       </div>
 
-      {/* Modals */}
       {showOrderModal && (
-        <OrderModal
-          supplier={supplier} order={editOrder} storeId={storeId}
+        <OrderModal supplier={supplier} order={editOrder} storeId={storeId}
           onClose={() => { setShowOrderModal(false); setEditOrder(null); }}
-          onSuccess={() => { loadSupplierData(); onRefresh(); }}
-        />
+          onSuccess={() => { loadSupplierData(); onRefresh(); }} />
       )}
       {showContactModal && (
-        <ContactLogModal
-          supplier={supplier} storeId={storeId} user={user}
-          onClose={() => setShowContactModal(false)}
-          onSuccess={loadSupplierData}
-        />
+        <ContactLogModal supplier={supplier} storeId={storeId} user={user}
+          onClose={() => setShowContactModal(false)} onSuccess={loadSupplierData} />
       )}
     </div>
   );
@@ -969,18 +882,20 @@ export default function SuppliersPage() {
   const isAdmin      = ['super_admin', 'admin'].includes(user?.role ?? '');
   const canEdit      = ['super_admin', 'admin', 'manager'].includes(user?.role ?? '');
 
-  const [suppliers, setSuppliers]           = useState<Supplier[]>([]);
-  const [stores, setStores]                 = useState<StoreType[]>([]);
-  const [loading, setLoading]               = useState(true);
-  const [searchQuery, setSearchQuery]       = useState('');
-  const [filterStatus, setFilterStatus]     = useState<'all' | 'active' | 'inactive'>('all');
-  const [filterCategory, setFilterCategory] = useState<string | null>(null);
-  const [showModal, setShowModal]           = useState(false);
-  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
-  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
-  const [deletingId, setDeletingId]         = useState<string | null>(null);
-  const [sortBy, setSortBy]                 = useState<'name' | 'totalSpent' | 'lastOrder'>('name');
-  const [viewMode, setViewMode]             = useState<'table' | 'cards'>('table');
+  const [suppliers,         setSuppliers]         = useState<Supplier[]>([]);
+  const [stores,            setStores]            = useState<StoreType[]>([]);
+  const [loading,           setLoading]           = useState(true);
+  const [searchQuery,       setSearchQuery]       = useState('');
+  const [filterStatus,      setFilterStatus]      = useState<'all' | 'active' | 'inactive'>('all');
+  const [filterCategory,    setFilterCategory]    = useState<string | null>(null);
+  const [showModal,         setShowModal]         = useState(false);
+  const [editingSupplier,   setEditingSupplier]   = useState<Supplier | null>(null);
+  const [selectedSupplier,  setSelectedSupplier]  = useState<Supplier | null>(null);
+  const [deletingId,        setDeletingId]        = useState<string | null>(null);
+  const [sortBy,            setSortBy]            = useState<'name' | 'totalSpent' | 'lastOrder'>('name');
+  const [viewMode,          setViewMode]          = useState<'table' | 'cards'>('table');
+  // ── NEW: admins can toggle to see all branches ────────────────────────────
+  const [showAllBranches,   setShowAllBranches]   = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -1001,7 +916,6 @@ export default function SuppliersPage() {
           ...formData, storeId: formData.storeId || null,
           lastOrderDate: formData.lastOrderDate || null,
         });
-        // If we're viewing this supplier, refresh it
         if (selectedSupplier?.id === editingSupplier.id) {
           setSelectedSupplier(updated as unknown as Supplier);
         }
@@ -1029,29 +943,42 @@ export default function SuppliersPage() {
 
   const filtered = useMemo(() => {
     let res = [...suppliers];
-    // Filter by current store (non-admins only see their branch's suppliers)
-    if (!isAdmin && storeId) {
+
+    // ── BRANCH FILTER (THE FIX) ───────────────────────────────────────────────
+    // Everyone is scoped to the current branch by default.
+    // Admins/super_admins get an "All Branches" toggle to opt out.
+    const shouldFilterByBranch = storeId && !(isAdmin && showAllBranches);
+    if (shouldFilterByBranch) {
       res = res.filter(s => s.storeId === storeId || s.storeId === null);
     }
+    // ─────────────────────────────────────────────────────────────────────────
+
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      res = res.filter(s => s.name.toLowerCase().includes(q) || s.contactPerson?.toLowerCase().includes(q) || s.phone?.includes(q) || s.city?.toLowerCase().includes(q));
+      res = res.filter(s =>
+        s.name.toLowerCase().includes(q) ||
+        s.contactPerson?.toLowerCase().includes(q) ||
+        s.phone?.includes(q) ||
+        s.city?.toLowerCase().includes(q)
+      );
     }
     if (filterStatus !== 'all') res = res.filter(s => s.status === filterStatus);
     if (filterCategory) res = res.filter(s => s.category === filterCategory);
-    // Sort
-    if (sortBy === 'totalSpent') res.sort((a, b) => b.totalSpent - a.totalSpent);
+
+    if (sortBy === 'totalSpent')  res.sort((a, b) => b.totalSpent - a.totalSpent);
     else if (sortBy === 'lastOrder') res.sort((a, b) => (b.lastOrderDate ?? '').localeCompare(a.lastOrderDate ?? ''));
     else res.sort((a, b) => a.name.localeCompare(b.name));
-    return res;
-  }, [suppliers, searchQuery, filterStatus, filterCategory, sortBy, storeId, isAdmin]);
 
+    return res;
+  }, [suppliers, searchQuery, filterStatus, filterCategory, sortBy, storeId, isAdmin, showAllBranches]);
+
+  // Stats scoped to the same filter
   const stats = useMemo(() => ({
-    total:      suppliers.length,
-    active:     suppliers.filter(s => s.status === 'active').length,
-    totalSpent: suppliers.reduce((a, s) => a + s.totalSpent, 0),
-    categories: new Set(suppliers.map(s => s.category)).size,
-  }), [suppliers]);
+    total:      filtered.length,
+    active:     filtered.filter(s => s.status === 'active').length,
+    totalSpent: filtered.reduce((a, s) => a + s.totalSpent, 0),
+    categories: new Set(filtered.map(s => s.category)).size,
+  }), [filtered]);
 
   if (loading) return (
     <div className="p-6 flex items-center justify-center h-96">
@@ -1065,31 +992,49 @@ export default function SuppliersPage() {
   return (
     <div className="p-4 sm:p-6 space-y-5">
 
-      {/* ── HEADER ── */}
+      {/* HEADER */}
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-foreground flex items-center gap-3">
             <Truck className="w-7 h-7 text-primary" /> Suppliers
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {currentStore ? `${currentStore.name} — supplier management` : 'Manage all suppliers and vendors'}
+            {isAdmin && showAllBranches
+              ? 'Showing all branches'
+              : currentStore
+                ? `${currentStore.name} — supplier management`
+                : 'Manage all suppliers and vendors'}
           </p>
         </div>
-        {canEdit && (
-          <Button onClick={() => { setEditingSupplier(null); setShowModal(true); }}
-            className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90 self-start">
-            <Plus className="w-4 h-4" /> Add Supplier
-          </Button>
-        )}
+        <div className="flex items-center gap-2 self-start">
+          {/* All-branches toggle — admins only */}
+          {isAdmin && (
+            <Button
+              variant={showAllBranches ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setShowAllBranches(v => !v)}
+              className="gap-1.5 text-xs"
+            >
+              <Layers className="w-3.5 h-3.5" />
+              {showAllBranches ? 'All Branches' : 'This Branch'}
+            </Button>
+          )}
+          {canEdit && (
+            <Button onClick={() => { setEditingSupplier(null); setShowModal(true); }}
+              className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90">
+              <Plus className="w-4 h-4" /> Add Supplier
+            </Button>
+          )}
+        </div>
       </div>
 
-      {/* ── STATS ── */}
+      {/* STATS — scoped to filtered results */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: 'Total Suppliers', value: stats.total,                      icon: <Truck       className="w-5 h-5" />, color: 'text-foreground',  bg: 'bg-muted/60' },
-          { label: 'Active',          value: stats.active,                     icon: <CheckCircle2 className="w-5 h-5" />, color: 'text-green-600',  bg: 'bg-green-50' },
-          { label: 'Total Spent',     value: formatCurrency(stats.totalSpent), icon: <DollarSign  className="w-5 h-5" />, color: 'text-primary',     bg: 'bg-primary/10' },
-          { label: 'Categories',      value: stats.categories,                 icon: <Package     className="w-5 h-5" />, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+          { label: 'Suppliers',   value: stats.total,                      icon: <Truck        className="w-5 h-5" />, color: 'text-foreground',  bg: 'bg-muted/60' },
+          { label: 'Active',      value: stats.active,                     icon: <CheckCircle2 className="w-5 h-5" />, color: 'text-green-600',  bg: 'bg-green-50' },
+          { label: 'Total Spent', value: formatCurrency(stats.totalSpent), icon: <DollarSign   className="w-5 h-5" />, color: 'text-primary',     bg: 'bg-primary/10' },
+          { label: 'Categories',  value: stats.categories,                 icon: <Package      className="w-5 h-5" />, color: 'text-indigo-600', bg: 'bg-indigo-50' },
         ].map((m, i) => (
           <Card key={i} className="bg-card border-border">
             <CardContent className="p-4 flex items-center gap-3">
@@ -1103,10 +1048,8 @@ export default function SuppliersPage() {
         ))}
       </div>
 
-      {/* ── MAIN LAYOUT (list + detail) ── */}
+      {/* MAIN LAYOUT */}
       <div className={`flex gap-5 ${selectedSupplier ? 'flex-col lg:flex-row' : ''}`}>
-
-        {/* ── LEFT: filters + list ── */}
         <div className={`${selectedSupplier ? 'lg:w-[55%]' : 'w-full'} space-y-4`}>
 
           {/* Filters */}
@@ -1134,14 +1077,13 @@ export default function SuppliersPage() {
                 ))}
               </div>
               <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>Showing {filtered.length} of {suppliers.length} suppliers</span>
+                <span>
+                  Showing {filtered.length} supplier{filtered.length !== 1 ? 's' : ''}
+                  {isAdmin && showAllBranches ? ' (all branches)' : currentStore ? ` in ${currentStore.name}` : ''}
+                </span>
                 <div className="flex gap-1">
-                  <Button size="sm" variant={viewMode === 'table' ? 'default' : 'outline'} className="h-6 w-6 p-0" onClick={() => setViewMode('table')}>
-                    <ArrowUpDown className="w-3 h-3" />
-                  </Button>
-                  <Button size="sm" variant={viewMode === 'cards' ? 'default' : 'outline'} className="h-6 w-6 p-0" onClick={() => setViewMode('cards')}>
-                    <BarChart2 className="w-3 h-3" />
-                  </Button>
+                  <Button size="sm" variant={viewMode === 'table' ? 'default' : 'outline'} className="h-6 w-6 p-0" onClick={() => setViewMode('table')}><ArrowUpDown className="w-3 h-3" /></Button>
+                  <Button size="sm" variant={viewMode === 'cards' ? 'default' : 'outline'} className="h-6 w-6 p-0" onClick={() => setViewMode('cards')}><BarChart2 className="w-3 h-3" /></Button>
                 </div>
               </div>
             </CardContent>
@@ -1163,10 +1105,10 @@ export default function SuppliersPage() {
                     <tbody>
                       {filtered.length === 0 ? (
                         <tr><td colSpan={7} className="text-center py-12 text-muted-foreground text-sm">
-                          {suppliers.length === 0 ? 'No suppliers yet.' : 'No suppliers match your filters.'}
+                          {suppliers.length === 0 ? 'No suppliers yet.' : `No suppliers in ${currentStore?.name ?? 'this branch'}.`}
                         </td></tr>
                       ) : filtered.map(s => {
-                        const storeName = stores.find(st => st.id === s.storeId)?.name;
+                        const sName = stores.find(st => st.id === s.storeId)?.name;
                         const isSelected = selectedSupplier?.id === s.id;
                         return (
                           <tr key={s.id} onClick={() => setSelectedSupplier(isSelected ? null : s)}
@@ -1178,8 +1120,8 @@ export default function SuppliersPage() {
                                 </div>
                                 <div>
                                   <p className="font-semibold text-foreground text-xs">{s.name}</p>
-                                  {(s.city || storeName) && (
-                                    <p className="text-[10px] text-muted-foreground">{[s.city, storeName].filter(Boolean).join(' · ')}</p>
+                                  {(s.city || sName) && (
+                                    <p className="text-[10px] text-muted-foreground">{[s.city, sName].filter(Boolean).join(' · ')}</p>
                                   )}
                                   {(s.rating ?? 0) > 0 && <StarRating value={s.rating ?? 0} readOnly />}
                                 </div>
@@ -1189,12 +1131,8 @@ export default function SuppliersPage() {
                               <p className="text-xs text-foreground">{s.contactPerson}</p>
                               <p className="text-[10px] text-muted-foreground">{s.phone}</p>
                             </td>
-                            <td className="py-3 px-4">
-                              <Badge variant="outline" className="text-[10px]">{s.category}</Badge>
-                            </td>
-                            <td className="py-3 px-4 hidden lg:table-cell">
-                              <span className="text-xs text-muted-foreground">{s.paymentTerms ?? '—'}</span>
-                            </td>
+                            <td className="py-3 px-4"><Badge variant="outline" className="text-[10px]">{s.category}</Badge></td>
+                            <td className="py-3 px-4 hidden lg:table-cell"><span className="text-xs text-muted-foreground">{s.paymentTerms ?? '—'}</span></td>
                             <td className="py-3 px-4">
                               <p className="text-xs font-semibold text-foreground">{formatCurrency(s.totalSpent)}</p>
                               {s.lastOrderDate && <p className="text-[10px] text-muted-foreground">{s.lastOrderDate}</p>}
@@ -1230,9 +1168,11 @@ export default function SuppliersPage() {
           {viewMode === 'cards' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
               {filtered.length === 0 ? (
-                <div className="col-span-3 text-center py-12 text-muted-foreground">No suppliers match your filters.</div>
+                <div className="col-span-3 text-center py-12 text-muted-foreground">
+                  {suppliers.length === 0 ? 'No suppliers yet.' : `No suppliers in ${currentStore?.name ?? 'this branch'}.`}
+                </div>
               ) : filtered.map(s => {
-                const storeName = stores.find(st => st.id === s.storeId)?.name;
+                const sName = stores.find(st => st.id === s.storeId)?.name;
                 const isSelected = selectedSupplier?.id === s.id;
                 return (
                   <Card key={s.id} onClick={() => setSelectedSupplier(isSelected ? null : s)}
@@ -1251,7 +1191,7 @@ export default function SuppliersPage() {
                       <div className="space-y-1 text-xs text-muted-foreground">
                         <div className="flex items-center gap-1.5"><Phone className="w-3 h-3" />{s.contactPerson} · {s.phone}</div>
                         {s.city && <div className="flex items-center gap-1.5"><MapPin className="w-3 h-3" />{s.city}</div>}
-                        {storeName && <div className="flex items-center gap-1.5 text-primary"><Store className="w-3 h-3" />{storeName}</div>}
+                        {sName && <div className="flex items-center gap-1.5 text-primary"><Store className="w-3 h-3" />{sName}</div>}
                       </div>
                       {(s.rating ?? 0) > 0 && <StarRating value={s.rating ?? 0} readOnly />}
                       <div className="flex items-center justify-between pt-2 border-t border-border">
@@ -1284,16 +1224,12 @@ export default function SuppliersPage() {
           )}
         </div>
 
-        {/* ── RIGHT: detail panel ── */}
+        {/* Detail panel */}
         {selectedSupplier && (
           <div className="lg:w-[45%] lg:sticky lg:top-6 lg:self-start">
             <SupplierDetailPanel
-              supplier={selectedSupplier}
-              stores={stores}
-              storeId={storeId}
-              user={user}
-              isAdmin={isAdmin}
-              canEdit={canEdit}
+              supplier={selectedSupplier} stores={stores} storeId={storeId}
+              user={user} isAdmin={isAdmin} canEdit={canEdit}
               onEdit={() => { setEditingSupplier(selectedSupplier); setShowModal(true); }}
               onClose={() => setSelectedSupplier(null)}
               onRefresh={loadData}
@@ -1302,13 +1238,10 @@ export default function SuppliersPage() {
         )}
       </div>
 
-      {/* ── MODAL ── */}
       {showModal && (
         <SupplierModal
-          supplier={editingSupplier}
-          currentStore={currentStore}
-          stores={stores}
-          isAdmin={isAdmin}
+          supplier={editingSupplier} currentStore={currentStore}
+          stores={stores} isAdmin={isAdmin}
           onClose={() => { setShowModal(false); setEditingSupplier(null); }}
           onSave={handleSave}
         />
