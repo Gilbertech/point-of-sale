@@ -16,8 +16,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { useStore } from '@/lib/store-context';
+import { supabase } from '@/lib/supabase/client';
 import {
-  getAllSupportTickets,
   createSupportTicket,
   replyToSupportTicket,
   resolveSupportTicket,
@@ -258,7 +258,7 @@ export default function SupportPage() {
     : undefined;
   const autofillPhone = isCustomer ? ((user as any)?.phone ?? '') : undefined;
 
-  const [allTickets,      setAllTickets]      = useState<SupportTicket[]>([]);
+  const [tickets,         setTickets]         = useState<SupportTicket[]>([]);
   const [loading,         setLoading]         = useState(true);
   const [selected,        setSelected]        = useState<SupportTicket | null>(null);
   const [showModal,       setShowModal]       = useState(false);
@@ -269,13 +269,43 @@ export default function SupportPage() {
   const [resolving,       setResolving]       = useState(false);
   const [showAllBranches, setShowAllBranches] = useState(false);
 
-  useEffect(() => { loadTickets(); }, []);
+  // Re-fetch whenever branch scope changes
+  useEffect(() => { loadTickets(); }, [storeId, showAllBranches, isCustomer, autofillName]);
 
   const loadTickets = async () => {
     setLoading(true);
     try {
-      const data = await getAllSupportTickets();
-      setAllTickets(data);
+      // ── Query Supabase directly so the filter is applied at the DB level ──
+      let query = supabase
+        .from('support_tickets')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (isCustomer && autofillName) {
+        // Customers only see their own tickets
+        query = query.eq('customer_name', autofillName);
+      } else if (storeId && !(isAdmin && showAllBranches)) {
+        // All other roles: scope to current branch
+        query = query.eq('store_id', storeId);
+      }
+      // Admins with showAllBranches=true → no filter → see everything
+
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+
+      setTickets((data || []).map((t: any) => ({
+        id:            t.id,
+        customerName:  t.customer_name,
+        customerPhone: t.customer_phone ?? '',
+        subject:       t.subject,
+        message:       t.message,
+        category:      t.category,
+        status:        t.status as TicketStatus,
+        reply:         t.reply ?? null,
+        storeId:       t.store_id ?? null,
+        attachments:   t.attachments ?? [],
+        createdAt:     new Date(t.created_at),
+      })));
     } catch (error) {
       console.error('Error loading tickets:', error);
       alert('Failed to load support tickets');
@@ -283,21 +313,6 @@ export default function SupportPage() {
       setLoading(false);
     }
   };
-
-  // ── BRANCH + ROLE FILTER ─────────────────────────────────────────────────
-  // Customers    → only their own tickets (matched by name)
-  // All others   → current branch only, unless admin toggled "All Branches"
-  const tickets = useMemo(() => {
-    if (isCustomer) {
-      return allTickets.filter(t => t.customerName === autofillName);
-    }
-    const shouldFilterByBranch = storeId && !(isAdmin && showAllBranches);
-    if (shouldFilterByBranch) {
-      return allTickets.filter(t => t.storeId === storeId || t.storeId == null);
-    }
-    return allTickets;
-  }, [allTickets, isCustomer, autofillName, storeId, isAdmin, showAllBranches]);
-  // ─────────────────────────────────────────────────────────────────────────
 
   const handleCreate = async (data: {
     customerName: string; customerPhone: string;
@@ -486,11 +501,9 @@ export default function SupportPage() {
           {filtered.length === 0 ? (
             <Card className="bg-card border-border">
               <CardContent className="text-center py-10 text-muted-foreground">
-                {allTickets.length === 0
-                  ? 'No tickets yet.'
-                  : tickets.length === 0
-                    ? `No tickets for ${currentStore?.name ?? 'this branch'} yet.`
-                    : 'No tickets match your filters.'}
+                {tickets.length === 0
+                  ? `No tickets yet${!isCustomer && currentStore ? ` for ${currentStore.name}` : ''}.`
+                  : 'No tickets match your filters.'}
               </CardContent>
             </Card>
           ) : filtered.map(t => (

@@ -26,6 +26,7 @@ export const getAllWorkerQueries = async () => {
     adminReply: q.admin_reply || null,
     resolvedAt: q.resolved_at ? new Date(q.resolved_at) : null,
     createdAt: new Date(q.created_at),
+    storeId: q.store_id ?? null, // ✅ mapped
   }));
 };
 
@@ -54,6 +55,7 @@ export const getWorkerQueriesByWorker = async (workerId: string) => {
     adminReply: q.admin_reply || null,
     resolvedAt: q.resolved_at ? new Date(q.resolved_at) : null,
     createdAt: new Date(q.created_at),
+    storeId: q.store_id ?? null, // ✅ mapped
   }));
 };
 
@@ -65,7 +67,7 @@ export const createWorkerQuery = async (query: {
   message: string;
   category: string;
   priority: 'low' | 'medium' | 'high';
-  storeId: string; // ✅ required
+  storeId: string;
 }) => {
   const { data, error } = await supabase
     .from('worker_queries')
@@ -78,7 +80,7 @@ export const createWorkerQuery = async (query: {
       category:          query.category,
       priority:          query.priority,
       status:            'open',
-      store_id:          query.storeId, // ✅
+      store_id:          query.storeId,
     }])
     .select()
     .single();
@@ -101,6 +103,7 @@ export const createWorkerQuery = async (query: {
     adminReply: data.admin_reply || null,
     resolvedAt: null,
     createdAt: new Date(data.created_at),
+    storeId: data.store_id ?? null, // ✅ mapped
   };
 };
 
@@ -157,6 +160,7 @@ export const getAllSupportTickets = async () => {
     category: t.category,
     status: t.status as 'open' | 'in-progress' | 'resolved',
     reply: t.reply || null,
+    storeId: t.store_id ?? null, // ✅ THIS WAS THE BUG — store_id was never mapped
     createdAt: new Date(t.created_at),
   }));
 };
@@ -167,7 +171,8 @@ export const createSupportTicket = async (ticket: {
   subject: string;
   message: string;
   category: string;
-  storeId: string; // ✅ required
+  storeId: string;
+  attachments?: File[];
 }) => {
   const { data, error } = await supabase
     .from('support_tickets')
@@ -178,7 +183,7 @@ export const createSupportTicket = async (ticket: {
       message:        ticket.message,
       category:       ticket.category,
       status:         'open',
-      store_id:       ticket.storeId, // ✅
+      store_id:       ticket.storeId,
     }])
     .select()
     .single();
@@ -197,6 +202,7 @@ export const createSupportTicket = async (ticket: {
     category: data.category,
     status: data.status as 'open' | 'in-progress' | 'resolved',
     reply: data.reply || null,
+    storeId: data.store_id ?? null, // ✅ mapped
     createdAt: new Date(data.created_at),
   };
 };
