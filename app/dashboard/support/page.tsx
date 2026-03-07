@@ -1,4 +1,8 @@
 'use client';
+// Place at: app/dashboard/support/page.tsx
+// FIX 1: Added storeId to SupportTicket interface.
+// FIX 2: All roles (including admin) scoped to currentStore by default.
+//         Admins get a "This Branch / All Branches" toggle.
 
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -8,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Search, Plus, X, Send, CheckCircle2, Clock, AlertCircle,
-  Phone, Mail, MessageSquare, Camera, Upload, Paperclip, Image as ImageIcon,
+  Phone, Mail, MessageSquare, Camera, Upload, Paperclip, Image as ImageIcon, Layers,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { useStore } from '@/lib/store-context';
@@ -31,6 +35,7 @@ interface SupportTicket {
   status: TicketStatus;
   reply: string | null;
   createdAt: Date;
+  storeId?: string | null;   // ← ADDED: required for branch filtering
   attachments?: string[];
 }
 
@@ -69,7 +74,7 @@ function TicketModal({ onClose, onSubmit, prefillName, prefillPhone }: {
   const [saving, setSaving] = useState(false);
   const fileRef   = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
-  const isCustomer = !!prefillName; // name was auto-filled → customer
+  const isCustomer = !!prefillName;
 
   const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
 
@@ -93,9 +98,7 @@ function TicketModal({ onClose, onSubmit, prefillName, prefillPhone }: {
         </CardHeader>
         <CardContent className="space-y-4 pt-4">
 
-          {/* Customer info — auto-filled for customers, editable for staff */}
           {isCustomer ? (
-            // Customers see a read-only identity banner
             <div className="flex items-center gap-3 bg-primary/5 border border-primary/20 rounded-lg px-4 py-3">
               <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-sm">
                 {form.customerName.charAt(0).toUpperCase()}
@@ -111,7 +114,6 @@ function TicketModal({ onClose, onSubmit, prefillName, prefillPhone }: {
               </span>
             </div>
           ) : (
-            // Staff can type customer name/phone manually
             <>
               {([
                 ['Customer Name *',  'customerName',  'text'],
@@ -130,7 +132,6 @@ function TicketModal({ onClose, onSubmit, prefillName, prefillPhone }: {
             </>
           )}
 
-          {/* Subject */}
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-muted-foreground">Subject *</label>
             <Input
@@ -141,7 +142,6 @@ function TicketModal({ onClose, onSubmit, prefillName, prefillPhone }: {
             />
           </div>
 
-          {/* Category */}
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-muted-foreground">Category</label>
             <select
@@ -153,7 +153,6 @@ function TicketModal({ onClose, onSubmit, prefillName, prefillPhone }: {
             </select>
           </div>
 
-          {/* Message */}
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-muted-foreground">Message *</label>
             <textarea
@@ -165,33 +164,24 @@ function TicketModal({ onClose, onSubmit, prefillName, prefillPhone }: {
             />
           </div>
 
-          {/* Attachments */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium text-muted-foreground">
                 Attachments <span className="font-normal text-xs">(optional, max 4)</span>
               </label>
               <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => cameraRef.current?.click()}
-                  disabled={attachments.length >= 4}
-                  className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border border-border bg-muted text-muted-foreground hover:bg-accent disabled:opacity-40 transition"
-                >
+                <button type="button" onClick={() => cameraRef.current?.click()} disabled={attachments.length >= 4}
+                  className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border border-border bg-muted text-muted-foreground hover:bg-accent disabled:opacity-40 transition">
                   <Camera className="w-3.5 h-3.5" /> Camera
                 </button>
-                <button
-                  type="button"
-                  onClick={() => fileRef.current?.click()}
-                  disabled={attachments.length >= 4}
-                  className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border border-border bg-muted text-muted-foreground hover:bg-accent disabled:opacity-40 transition"
-                >
+                <button type="button" onClick={() => fileRef.current?.click()} disabled={attachments.length >= 4}
+                  className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border border-border bg-muted text-muted-foreground hover:bg-accent disabled:opacity-40 transition">
                   <Upload className="w-3.5 h-3.5" /> Upload
                 </button>
               </div>
             </div>
 
-            <input ref={fileRef} type="file" multiple accept="image/*,application/pdf" className="hidden"
+            <input ref={fileRef}   type="file" multiple accept="image/*,application/pdf" className="hidden"
               onChange={e => handleFileAdd(e.target.files)} />
             <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden"
               onChange={e => handleFileAdd(e.target.files)} />
@@ -207,37 +197,28 @@ function TicketModal({ onClose, onSubmit, prefillName, prefillPhone }: {
                         <Paperclip className="w-5 h-5 text-muted-foreground" />
                       </div>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => setAttachments(p => p.filter((_, j) => j !== i))}
-                      className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
-                    >
+                    <button type="button" onClick={() => setAttachments(p => p.filter((_, j) => j !== i))}
+                      className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
                       <X className="w-3 h-3" />
                     </button>
                   </div>
                 ))}
                 {attachments.length < 4 && (
-                  <button
-                    type="button"
-                    onClick={() => fileRef.current?.click()}
-                    className="aspect-square rounded-lg border-2 border-dashed border-border flex items-center justify-center text-muted-foreground hover:border-primary hover:text-primary transition"
-                  >
+                  <button type="button" onClick={() => fileRef.current?.click()}
+                    className="aspect-square rounded-lg border-2 border-dashed border-border flex items-center justify-center text-muted-foreground hover:border-primary hover:text-primary transition">
                     <Plus className="w-5 h-5" />
                   </button>
                 )}
               </div>
             ) : (
-              <div
-                onClick={() => fileRef.current?.click()}
-                className="border-2 border-dashed border-border rounded-lg p-4 text-center cursor-pointer hover:border-primary/50 transition"
-              >
+              <div onClick={() => fileRef.current?.click()}
+                className="border-2 border-dashed border-border rounded-lg p-4 text-center cursor-pointer hover:border-primary/50 transition">
                 <ImageIcon className="w-7 h-7 text-muted-foreground mx-auto mb-1" />
                 <p className="text-xs text-muted-foreground">Add photos of receipts, products, etc.</p>
               </div>
             )}
           </div>
 
-          {/* Actions */}
           <div className="flex gap-3 pt-1">
             <Button variant="outline" className="flex-1" onClick={onClose} disabled={saving}>Cancel</Button>
             <Button
@@ -265,26 +246,28 @@ function TicketModal({ onClose, onSubmit, prefillName, prefillPhone }: {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function SupportPage() {
-  const { user } = useAuth();
+  const { user }         = useAuth();
   const { currentStore } = useStore();
 
   const isCustomer = isCustomerRole(user?.role);
+  const isAdmin    = ['super_admin', 'admin'].includes(user?.role ?? '');
+  const storeId    = currentStore?.id ?? null;
 
-  // Auto-fill values from auth
   const autofillName  = isCustomer
     ? `${user?.firstName ?? ''} ${user?.lastName ?? ''}`.trim() || user?.email || ''
     : undefined;
   const autofillPhone = isCustomer ? ((user as any)?.phone ?? '') : undefined;
 
-  const [tickets,      setTickets]      = useState<SupportTicket[]>([]);
-  const [loading,      setLoading]      = useState(true);
-  const [selected,     setSelected]     = useState<SupportTicket | null>(null);
-  const [showModal,    setShowModal]    = useState(false);
-  const [searchQuery,  setSearchQuery]  = useState('');
-  const [filterStatus, setFilterStatus] = useState<'all' | TicketStatus>('all');
-  const [reply,        setReply]        = useState('');
-  const [replying,     setReplying]     = useState(false);
-  const [resolving,    setResolving]    = useState(false);
+  const [allTickets,      setAllTickets]      = useState<SupportTicket[]>([]);
+  const [loading,         setLoading]         = useState(true);
+  const [selected,        setSelected]        = useState<SupportTicket | null>(null);
+  const [showModal,       setShowModal]       = useState(false);
+  const [searchQuery,     setSearchQuery]     = useState('');
+  const [filterStatus,    setFilterStatus]    = useState<'all' | TicketStatus>('all');
+  const [reply,           setReply]           = useState('');
+  const [replying,        setReplying]        = useState(false);
+  const [resolving,       setResolving]       = useState(false);
+  const [showAllBranches, setShowAllBranches] = useState(false);
 
   useEffect(() => { loadTickets(); }, []);
 
@@ -292,11 +275,7 @@ export default function SupportPage() {
     setLoading(true);
     try {
       const data = await getAllSupportTickets();
-      // Customers only see their own tickets
-      const filtered = isCustomer
-        ? data.filter((t: SupportTicket) => t.customerName === autofillName)
-        : data;
-      setTickets(filtered);
+      setAllTickets(data);
     } catch (error) {
       console.error('Error loading tickets:', error);
       alert('Failed to load support tickets');
@@ -305,13 +284,24 @@ export default function SupportPage() {
     }
   };
 
+  // ── BRANCH + ROLE FILTER ─────────────────────────────────────────────────
+  // Customers    → only their own tickets (matched by name)
+  // All others   → current branch only, unless admin toggled "All Branches"
+  const tickets = useMemo(() => {
+    if (isCustomer) {
+      return allTickets.filter(t => t.customerName === autofillName);
+    }
+    const shouldFilterByBranch = storeId && !(isAdmin && showAllBranches);
+    if (shouldFilterByBranch) {
+      return allTickets.filter(t => t.storeId === storeId || t.storeId == null);
+    }
+    return allTickets;
+  }, [allTickets, isCustomer, autofillName, storeId, isAdmin, showAllBranches]);
+  // ─────────────────────────────────────────────────────────────────────────
+
   const handleCreate = async (data: {
-    customerName: string;
-    customerPhone: string;
-    subject: string;
-    category: string;
-    message: string;
-    attachments: File[];
+    customerName: string; customerPhone: string;
+    subject: string; category: string; message: string; attachments: File[];
   }) => {
     if (!currentStore?.id) {
       alert('No store selected. Please select a branch from the sidebar.');
@@ -325,11 +315,10 @@ export default function SupportPage() {
         category:      data.category,
         message:       data.message,
         storeId:       currentStore.id,
-        attachments:   data.attachments,  // pass files to your helper to upload
+        attachments:   data.attachments,
       });
       await loadTickets();
     } catch (error) {
-      console.error('Error creating ticket:', error);
       alert(`Failed to create ticket: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
@@ -344,9 +333,7 @@ export default function SupportPage() {
       await loadTickets();
     } catch (error) {
       alert(`Failed to send reply: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setReplying(false);
-    }
+    } finally { setReplying(false); }
   };
 
   const handleResolve = async (id: string) => {
@@ -357,9 +344,7 @@ export default function SupportPage() {
       await loadTickets();
     } catch (error) {
       alert(`Failed to resolve ticket: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setResolving(false);
-    }
+    } finally { setResolving(false); }
   };
 
   const filtered = useMemo(() => {
@@ -375,6 +360,7 @@ export default function SupportPage() {
     return res;
   }, [tickets, searchQuery, filterStatus]);
 
+  // Stats scoped to the branch-filtered tickets (not allTickets)
   const stats = useMemo(() => ({
     open:       tickets.filter(t => t.status === 'open').length,
     inProgress: tickets.filter(t => t.status === 'in-progress').length,
@@ -394,7 +380,9 @@ export default function SupportPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-3xl font-bold text-foreground">
             {isCustomer ? 'My Support Tickets' : 'Customer Support'}
@@ -402,18 +390,34 @@ export default function SupportPage() {
           <p className="text-muted-foreground mt-1">
             {isCustomer
               ? `Logged in as ${autofillName}`
-              : currentStore
-                ? `Support tickets for ${currentStore.name}`
-                : 'Manage customer inquiries and complaints'}
+              : isAdmin && showAllBranches
+                ? 'Showing all branches'
+                : currentStore
+                  ? `Support tickets for ${currentStore.name}`
+                  : 'Manage customer inquiries and complaints'}
           </p>
         </div>
-        <Button
-          onClick={() => setShowModal(true)}
-          disabled={!currentStore}
-          className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
-        >
-          <Plus className="w-4 h-4" /> New Ticket
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* All-branches toggle — admins only */}
+          {isAdmin && !isCustomer && (
+            <Button
+              variant={showAllBranches ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setShowAllBranches(v => !v)}
+              className="gap-1.5 text-xs"
+            >
+              <Layers className="w-3.5 h-3.5" />
+              {showAllBranches ? 'All Branches' : 'This Branch'}
+            </Button>
+          )}
+          <Button
+            onClick={() => setShowModal(true)}
+            disabled={!currentStore}
+            className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+          >
+            <Plus className="w-4 h-4" /> New Ticket
+          </Button>
+        </div>
       </div>
 
       {!currentStore && (
@@ -423,7 +427,7 @@ export default function SupportPage() {
         </Alert>
       )}
 
-      {/* Stats */}
+      {/* Stats — scoped to current branch */}
       <div className="grid grid-cols-3 gap-4">
         {[
           { label: 'Open',        value: stats.open,       icon: <AlertCircle  className="h-5 w-5 text-blue-600" />,   iconBg: 'bg-blue-50' },
@@ -440,7 +444,7 @@ export default function SupportPage() {
         ))}
       </div>
 
-      {/* Contact info — shown to all */}
+      {/* Contact info */}
       <Card className="bg-primary/5 border-primary/20">
         <CardContent className="p-4 flex flex-wrap gap-6">
           <div className="flex items-center gap-2 text-sm"><Phone className="w-4 h-4 text-primary" /><span className="font-medium text-foreground">Support:</span><span className="text-muted-foreground">+254 800 000 100</span></div>
@@ -461,10 +465,17 @@ export default function SupportPage() {
               className="pl-10 border-border bg-input text-foreground"
             />
           </div>
-          <div className="flex gap-2">
-            {(['all', 'open', 'in-progress', 'resolved'] as const).map(s => (
-              <Button key={s} size="sm" variant={filterStatus === s ? 'default' : 'outline'} onClick={() => setFilterStatus(s)} className="capitalize">{s}</Button>
-            ))}
+          <div className="flex items-center justify-between">
+            <div className="flex gap-2 flex-wrap">
+              {(['all', 'open', 'in-progress', 'resolved'] as const).map(s => (
+                <Button key={s} size="sm" variant={filterStatus === s ? 'default' : 'outline'}
+                  onClick={() => setFilterStatus(s)} className="capitalize">{s}</Button>
+              ))}
+            </div>
+            <span className="text-xs text-muted-foreground">
+              {filtered.length} ticket{filtered.length !== 1 ? 's' : ''}
+              {!isCustomer && !showAllBranches && currentStore ? ` in ${currentStore.name}` : ''}
+            </span>
           </div>
         </CardContent>
       </Card>
@@ -475,15 +486,16 @@ export default function SupportPage() {
           {filtered.length === 0 ? (
             <Card className="bg-card border-border">
               <CardContent className="text-center py-10 text-muted-foreground">
-                {tickets.length === 0 ? 'No tickets yet.' : 'No tickets match your filters.'}
+                {allTickets.length === 0
+                  ? 'No tickets yet.'
+                  : tickets.length === 0
+                    ? `No tickets for ${currentStore?.name ?? 'this branch'} yet.`
+                    : 'No tickets match your filters.'}
               </CardContent>
             </Card>
           ) : filtered.map(t => (
-            <Card
-              key={t.id}
-              onClick={() => setSelected(t)}
-              className={`bg-card cursor-pointer hover:shadow-sm transition-all ${selected?.id === t.id ? 'border-primary' : 'border-border'}`}
-            >
+            <Card key={t.id} onClick={() => setSelected(t)}
+              className={`bg-card cursor-pointer hover:shadow-sm transition-all ${selected?.id === t.id ? 'border-primary' : 'border-border'}`}>
               <CardContent className="p-4 space-y-2">
                 <div className="flex items-start justify-between gap-2">
                   <div>
@@ -533,7 +545,6 @@ export default function SupportPage() {
                 <p className="text-sm text-foreground">{selected.message}</p>
               </div>
 
-              {/* Attachments in detail view */}
               {selected.attachments && selected.attachments.length > 0 && (
                 <div className="space-y-1">
                   <p className="text-xs text-muted-foreground">Attachments</p>
@@ -554,7 +565,6 @@ export default function SupportPage() {
                 </div>
               )}
 
-              {/* Reply/resolve — staff only */}
               {!isCustomer && selected.status !== 'resolved' && (
                 <div className="space-y-2 pt-2 border-t border-border">
                   <textarea
