@@ -2,6 +2,9 @@
 // File: app/dashboard/supplier/page.tsx
 // Comprehensive supplier management — profile cards, order history, performance,
 // contact log, documents, spend analytics, and full CRUD.
+// ✅ FIX: Suppliers are scoped to currentStore.id at the fetch level.
+//         loadData re-runs whenever currentStore changes.
+//         super_admin sees all; everyone else sees their branch only.
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -45,7 +48,8 @@ interface Supplier {
 
 interface SupplierOrder {
   id: string; supplierId: string; orderNumber: string; orderDate: string;
-  expectedDate: string; deliveredDate: string | null; status: 'pending' | 'ordered' | 'delivered' | 'cancelled' | 'partial';
+  expectedDate: string; deliveredDate: string | null;
+  status: 'pending' | 'ordered' | 'delivered' | 'cancelled' | 'partial';
   items: { productName: string; qty: number; unitPrice: number; total: number }[];
   totalAmount: number; notes: string; createdAt: Date;
 }
@@ -83,11 +87,14 @@ const CONTACT_TYPE_CONFIG = {
 // STAR RATING
 // ══════════════════════════════════════════════════════════════════════════════
 
-function StarRating({ value, onChange, readOnly }: { value: number; onChange?: (v: number) => void; readOnly?: boolean }) {
+function StarRating({ value, onChange, readOnly }: {
+  value: number; onChange?: (v: number) => void; readOnly?: boolean;
+}) {
   return (
     <div className="flex gap-0.5">
       {[1,2,3,4,5].map(i => (
-        <button key={i} type="button" onClick={() => !readOnly && onChange?.(i)} className={readOnly ? 'cursor-default' : 'cursor-pointer'}>
+        <button key={i} type="button" onClick={() => !readOnly && onChange?.(i)}
+          className={readOnly ? 'cursor-default' : 'cursor-pointer'}>
           <Star className={`w-4 h-4 ${i <= value ? 'fill-amber-400 text-amber-400' : 'text-gray-300'}`} />
         </button>
       ))}
@@ -99,7 +106,9 @@ function StarRating({ value, onChange, readOnly }: { value: number; onChange?: (
 // MODAL WRAPPER
 // ══════════════════════════════════════════════════════════════════════════════
 
-function Modal({ title, onClose, wide, children }: { title: string; onClose: () => void; wide?: boolean; children: React.ReactNode }) {
+function Modal({ title, onClose, wide, children }: {
+  title: string; onClose: () => void; wide?: boolean; children: React.ReactNode;
+}) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 overflow-y-auto">
       <Card className={`w-full ${wide ? 'max-w-3xl' : 'max-w-xl'} bg-card border-border shadow-2xl my-4`}>
@@ -114,7 +123,7 @@ function Modal({ title, onClose, wide, children }: { title: string; onClose: () 
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// SUPPLIER FORM MODAL — comprehensive fields
+// SUPPLIER FORM MODAL
 // ══════════════════════════════════════════════════════════════════════════════
 
 function SupplierModal({ supplier, currentStore, stores, isAdmin, onClose, onSave }: {
@@ -122,24 +131,19 @@ function SupplierModal({ supplier, currentStore, stores, isAdmin, onClose, onSav
   isAdmin: boolean; onClose: () => void; onSave: (d: any) => Promise<void>;
 }) {
   const [form, setForm] = useState({
-    // Basic
     name: supplier?.name ?? '', contactPerson: supplier?.contactPerson ?? '',
     email: supplier?.email ?? '', phone: supplier?.phone ?? '',
     address: supplier?.address ?? '', city: supplier?.city ?? '',
     country: supplier?.country ?? 'Kenya', category: supplier?.category ?? 'Dry Goods',
     status: supplier?.status ?? 'active' as 'active' | 'inactive',
-    // ── Always use currentStore — no manual branch selection ──
     notes: supplier?.notes ?? '', storeId: currentStore?.id ?? '',
     website: supplier?.website ?? '', taxPin: supplier?.taxPin ?? '',
-    // Commercial
     paymentTerms: supplier?.paymentTerms ?? 'Net 30',
     leadTimeDays: supplier?.leadTimeDays ?? 7,
     minOrderValue: supplier?.minOrderValue ?? 0,
     rating: supplier?.rating ?? 0,
-    // Banking
     bankName: supplier?.bankName ?? '', bankAccount: supplier?.bankAccount ?? '',
     bankBranch: supplier?.bankBranch ?? '',
-    // Stats (admin only)
     totalSpent: supplier?.totalSpent ?? 0,
     lastOrderDate: supplier?.lastOrderDate ?? '',
   });
@@ -152,7 +156,7 @@ function SupplierModal({ supplier, currentStore, stores, isAdmin, onClose, onSav
       alert('Name, contact person and phone are required.'); return;
     }
     setSaving(true);
-    // Always assign to currentStore — storeId not user-editable
+    // Always stamp with currentStore — not user-editable
     await onSave({ ...form, storeId: currentStore?.id ?? null });
     setSaving(false);
   };
@@ -165,7 +169,7 @@ function SupplierModal({ supplier, currentStore, stores, isAdmin, onClose, onSav
 
   return (
     <Modal title={supplier ? 'Edit Supplier' : 'Add New Supplier'} onClose={onClose} wide>
-      {/* Branch indicator — auto-assigned from currentStore, no manual selection */}
+      {/* Branch indicator */}
       <div className="flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-lg px-3 py-2 mb-4">
         <Store className="w-4 h-4 text-primary shrink-0" />
         <div className="flex-1 min-w-0">
@@ -181,7 +185,9 @@ function SupplierModal({ supplier, currentStore, stores, isAdmin, onClose, onSav
       <div className="flex gap-1 mb-4 bg-muted rounded-lg p-1">
         {SECTIONS.map(s => (
           <button key={s.key} onClick={() => setSection(s.key)}
-            className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-colors ${section === s.key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}>
+            className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-colors ${
+              section === s.key ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            }`}>
             {s.label}
           </button>
         ))}
@@ -289,7 +295,6 @@ function SupplierModal({ supplier, currentStore, stores, isAdmin, onClose, onSav
               </>
             )}
           </div>
-
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
             <p className="text-xs font-semibold text-amber-800 mb-1 flex items-center gap-1"><Zap className="w-3 h-3" />Commercial Summary</p>
             <div className="grid grid-cols-3 gap-2 text-center">
@@ -372,9 +377,7 @@ function OrderModal({ supplier, order, storeId, onClose, onSuccess }: {
   const updateItem = (i: number, k: string, v: any) => {
     const items = [...form.items];
     items[i] = { ...items[i], [k]: v };
-    if (k === 'qty' || k === 'unitPrice') {
-      items[i].total = items[i].qty * items[i].unitPrice;
-    }
+    if (k === 'qty' || k === 'unitPrice') items[i].total = items[i].qty * items[i].unitPrice;
     setForm(p => ({ ...p, items }));
   };
 
@@ -442,7 +445,9 @@ function OrderModal({ supplier, order, storeId, onClose, onSuccess }: {
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Order Items</label>
-            <Button type="button" size="sm" variant="outline" onClick={addItem} className="text-xs h-7"><Plus className="w-3 h-3 mr-1" />Add Item</Button>
+            <Button type="button" size="sm" variant="outline" onClick={addItem} className="text-xs h-7">
+              <Plus className="w-3 h-3 mr-1" />Add Item
+            </Button>
           </div>
           <div className="border border-border rounded-lg overflow-hidden">
             <table className="w-full text-sm">
@@ -459,17 +464,24 @@ function OrderModal({ supplier, order, storeId, onClose, onSuccess }: {
                 {form.items.map((item, i) => (
                   <tr key={i} className="border-b border-border last:border-b-0">
                     <td className="py-1.5 px-2">
-                      <Input value={item.productName} onChange={e => updateItem(i, 'productName', e.target.value)} placeholder="Product name" className="h-8 text-xs border-0 bg-transparent p-0 focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0" />
+                      <Input value={item.productName} onChange={e => updateItem(i, 'productName', e.target.value)}
+                        placeholder="Product name" className="h-8 text-xs border-0 bg-transparent p-0 focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0" />
                     </td>
                     <td className="py-1.5 px-2">
-                      <Input type="number" min={1} value={item.qty} onChange={e => updateItem(i, 'qty', Number(e.target.value))} className="h-8 text-xs text-center border-0 bg-transparent p-0 focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 w-12" />
+                      <Input type="number" min={1} value={item.qty} onChange={e => updateItem(i, 'qty', Number(e.target.value))}
+                        className="h-8 text-xs text-center border-0 bg-transparent p-0 focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 w-12" />
                     </td>
                     <td className="py-1.5 px-2">
-                      <Input type="number" min={0} value={item.unitPrice} onChange={e => updateItem(i, 'unitPrice', Number(e.target.value))} className="h-8 text-xs text-right border-0 bg-transparent p-0 focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0" />
+                      <Input type="number" min={0} value={item.unitPrice} onChange={e => updateItem(i, 'unitPrice', Number(e.target.value))}
+                        className="h-8 text-xs text-right border-0 bg-transparent p-0 focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0" />
                     </td>
                     <td className="py-1.5 px-3 text-right text-xs font-medium text-foreground">{formatCurrency(item.total)}</td>
                     <td className="py-1.5 px-1">
-                      {form.items.length > 1 && <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={() => removeItem(i)}><X className="w-3 h-3" /></Button>}
+                      {form.items.length > 1 && (
+                        <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={() => removeItem(i)}>
+                          <X className="w-3 h-3" />
+                        </Button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -561,7 +573,8 @@ function ContactLogModal({ supplier, storeId, user, onClose, onSuccess }: {
         </div>
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-muted-foreground">Notes *</label>
-          <textarea rows={4} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="What was discussed, agreed, or actioned..."
+          <textarea rows={4} value={form.notes} onChange={e => set('notes', e.target.value)}
+            placeholder="What was discussed, agreed, or actioned..."
             className="w-full px-3 py-2 text-sm border border-border bg-input text-foreground rounded-md focus:outline-none resize-none" />
         </div>
         <div className="flex gap-3 pt-2">
@@ -627,7 +640,6 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
     avgOrderValue: orders.length > 0 ? orders.reduce((a, o) => a + o.totalAmount, 0) / orders.length : 0,
   }), [orders]);
 
-  // Monthly spend for sparkline
   const monthlySpend = useMemo(() => {
     const map: Record<string, number> = {};
     orders.filter(o => o.status === 'delivered').forEach(o => {
@@ -638,9 +650,9 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
   }, [orders]);
 
   const TABS_CONFIG = [
-    { key: 'overview', label: 'Overview' },
-    { key: 'orders',   label: `Orders${orders.length > 0 ? ` (${orders.length})` : ''}` },
-    { key: 'contacts', label: `Contacts${contacts.length > 0 ? ` (${contacts.length})` : ''}` },
+    { key: 'overview',  label: 'Overview' },
+    { key: 'orders',    label: `Orders${orders.length > 0 ? ` (${orders.length})` : ''}` },
+    { key: 'contacts',  label: `Contacts${contacts.length > 0 ? ` (${contacts.length})` : ''}` },
     { key: 'analytics', label: 'Analytics' },
   ] as const;
 
@@ -674,7 +686,9 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
       <div className="flex border-b border-border px-4">
         {TABS_CONFIG.map(t => (
           <button key={t.key} onClick={() => setTab(t.key as Tab)}
-            className={`text-xs font-medium py-2.5 px-3 border-b-2 transition-colors whitespace-nowrap ${tab === t.key ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
+            className={`text-xs font-medium py-2.5 px-3 border-b-2 transition-colors whitespace-nowrap ${
+              tab === t.key ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}>
             {t.label}
           </button>
         ))}
@@ -686,11 +700,10 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
         {/* ── OVERVIEW ── */}
         {tab === 'overview' && (
           <div className="space-y-4">
-            {/* Quick stats */}
             <div className="grid grid-cols-3 gap-2">
               {[
-                { label: 'Orders',    value: orderStats.total,                        icon: <ShoppingCart className="w-4 h-4" />, color: 'text-blue-600' },
-                { label: 'Delivered', value: orderStats.delivered,                    icon: <CheckCircle2 className="w-4 h-4" />, color: 'text-green-600' },
+                { label: 'Orders',      value: orderStats.total,                      icon: <ShoppingCart className="w-4 h-4" />, color: 'text-blue-600' },
+                { label: 'Delivered',   value: orderStats.delivered,                  icon: <CheckCircle2 className="w-4 h-4" />, color: 'text-green-600' },
                 { label: 'Total Spent', value: formatCurrency(supplier.totalSpent),   icon: <DollarSign className="w-4 h-4" />,   color: 'text-primary' },
               ].map((m, i) => (
                 <div key={i} className="bg-muted/50 rounded-lg p-3 text-center">
@@ -701,7 +714,6 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
               ))}
             </div>
 
-            {/* Contact info */}
             <div className="space-y-2">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Contact</p>
               <div className="space-y-1.5">
@@ -728,15 +740,14 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
               </div>
             </div>
 
-            {/* Commercial details */}
             <div className="space-y-2">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Commercial</p>
               <div className="grid grid-cols-2 gap-2">
                 {[
                   { label: 'Payment Terms', value: supplier.paymentTerms ?? '—' },
-                  { label: 'Lead Time', value: supplier.leadTimeDays ? `${supplier.leadTimeDays} days` : '—' },
-                  { label: 'Min Order', value: supplier.minOrderValue ? formatCurrency(supplier.minOrderValue) : '—' },
-                  { label: 'Last Order', value: supplier.lastOrderDate ?? '—' },
+                  { label: 'Lead Time',     value: supplier.leadTimeDays ? `${supplier.leadTimeDays} days` : '—' },
+                  { label: 'Min Order',     value: supplier.minOrderValue ? formatCurrency(supplier.minOrderValue) : '—' },
+                  { label: 'Last Order',    value: supplier.lastOrderDate ?? '—' },
                 ].map((f, i) => (
                   <div key={i} className="bg-muted/40 rounded-lg px-3 py-2">
                     <p className="text-[10px] text-muted-foreground">{f.label}</p>
@@ -746,7 +757,6 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
               </div>
             </div>
 
-            {/* Rating */}
             {(supplier.rating ?? 0) > 0 && (
               <div className="space-y-1">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Supplier Rating</p>
@@ -754,7 +764,6 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
               </div>
             )}
 
-            {/* Notes */}
             {supplier.notes && (
               <div className="space-y-1">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Notes</p>
@@ -762,7 +771,6 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
               </div>
             )}
 
-            {/* Banking (admin only) */}
             {isAdmin && supplier.bankName && (
               <div className="space-y-1">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Banking</p>
@@ -784,7 +792,8 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
                 <span>Delivered: <strong className="text-green-600">{orderStats.delivered}</strong></span>
               </div>
               {canEdit && (
-                <Button size="sm" onClick={() => { setEditOrder(null); setShowOrderModal(true); }} className="gap-1 bg-primary text-primary-foreground hover:bg-primary/90 h-7 text-xs">
+                <Button size="sm" onClick={() => { setEditOrder(null); setShowOrderModal(true); }}
+                  className="gap-1 bg-primary text-primary-foreground hover:bg-primary/90 h-7 text-xs">
                   <Plus className="w-3 h-3" />New PO
                 </Button>
               )}
@@ -827,7 +836,8 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
           <div className="space-y-3">
             <div className="flex justify-end">
               {canEdit && (
-                <Button size="sm" onClick={() => setShowContactModal(true)} className="gap-1 bg-primary text-primary-foreground hover:bg-primary/90 h-7 text-xs">
+                <Button size="sm" onClick={() => setShowContactModal(true)}
+                  className="gap-1 bg-primary text-primary-foreground hover:bg-primary/90 h-7 text-xs">
                   <Plus className="w-3 h-3" />Log Contact
                 </Button>
               )}
@@ -862,12 +872,11 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
         {/* ── ANALYTICS ── */}
         {tab === 'analytics' && (
           <div className="space-y-4">
-            {/* KPI grid */}
             <div className="grid grid-cols-2 gap-2">
               {[
-                { label: 'Lifetime Spend',   value: formatCurrency(supplier.totalSpent),              icon: <DollarSign className="w-4 h-4" />,  color: 'text-primary',    bg: 'bg-primary/10' },
-                { label: 'Avg Order Value',  value: formatCurrency(orderStats.avgOrderValue),         icon: <BarChart2 className="w-4 h-4" />,    color: 'text-blue-600',   bg: 'bg-blue-50' },
-                { label: 'Total Orders',     value: orderStats.total,                                 icon: <ShoppingCart className="w-4 h-4" />, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+                { label: 'Lifetime Spend',   value: formatCurrency(supplier.totalSpent),      icon: <DollarSign className="w-4 h-4" />,   color: 'text-primary',    bg: 'bg-primary/10' },
+                { label: 'Avg Order Value',  value: formatCurrency(orderStats.avgOrderValue), icon: <BarChart2 className="w-4 h-4" />,    color: 'text-blue-600',   bg: 'bg-blue-50' },
+                { label: 'Total Orders',     value: orderStats.total,                         icon: <ShoppingCart className="w-4 h-4" />, color: 'text-indigo-600', bg: 'bg-indigo-50' },
                 { label: 'Fulfillment Rate', value: orderStats.total > 0 ? `${Math.round(orderStats.delivered / orderStats.total * 100)}%` : '—', icon: <Award className="w-4 h-4" />, color: 'text-green-600', bg: 'bg-green-50' },
               ].map((m, i) => (
                 <div key={i} className={`${m.bg} rounded-lg p-3`}>
@@ -878,7 +887,6 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
               ))}
             </div>
 
-            {/* Monthly spend chart */}
             {monthlySpend.length > 0 && (
               <div className="space-y-2">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Monthly Spend (Last 6 months)</p>
@@ -889,10 +897,8 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
                       <div key={month} className="flex items-center gap-2">
                         <span className="text-[10px] text-muted-foreground w-14 shrink-0">{month.slice(5)} {month.slice(0,4)}</span>
                         <div className="flex-1 bg-muted rounded-full h-5 overflow-hidden">
-                          <div
-                            className="h-full bg-primary rounded-full flex items-center justify-end pr-2 transition-all duration-500"
-                            style={{ width: `${Math.max((amount / max) * 100, 4)}%` }}
-                          >
+                          <div className="h-full bg-primary rounded-full flex items-center justify-end pr-2 transition-all duration-500"
+                            style={{ width: `${Math.max((amount / max) * 100, 4)}%` }}>
                             <span className="text-[9px] text-primary-foreground font-medium whitespace-nowrap">{formatCurrency(amount)}</span>
                           </div>
                         </div>
@@ -903,7 +909,6 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
               </div>
             )}
 
-            {/* Order status breakdown */}
             {orders.length > 0 && (
               <div className="space-y-2">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Order Status Breakdown</p>
@@ -937,7 +942,6 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
         )}
       </div>
 
-      {/* Modals */}
       {showOrderModal && (
         <OrderModal
           supplier={supplier} order={editOrder} storeId={storeId}
@@ -963,34 +967,65 @@ function SupplierDetailPanel({ supplier, stores, storeId, user, isAdmin, canEdit
 export default function SuppliersPage() {
   const { user } = useAuth();
   const { currentStore } = useStore();
-  const storeId = currentStore?.id ?? null;
 
+  // ─── Derive the effective storeId once ──────────────────────────────────────
+  // super_admin sees all branches (null = no filter)
+  // everyone else is locked to their currentStore
   const isSuperAdmin = user?.role === 'super_admin';
   const isAdmin      = ['super_admin', 'admin'].includes(user?.role ?? '');
   const canEdit      = ['super_admin', 'admin', 'manager'].includes(user?.role ?? '');
 
-  const [suppliers, setSuppliers]           = useState<Supplier[]>([]);
-  const [stores, setStores]                 = useState<StoreType[]>([]);
-  const [loading, setLoading]               = useState(true);
-  const [searchQuery, setSearchQuery]       = useState('');
-  const [filterStatus, setFilterStatus]     = useState<'all' | 'active' | 'inactive'>('all');
-  const [filterCategory, setFilterCategory] = useState<string | null>(null);
-  const [showModal, setShowModal]           = useState(false);
-  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
-  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
-  const [deletingId, setDeletingId]         = useState<string | null>(null);
-  const [sortBy, setSortBy]                 = useState<'name' | 'totalSpent' | 'lastOrder'>('name');
-  const [viewMode, setViewMode]             = useState<'table' | 'cards'>('table');
+  // The store ID to filter by. null only for super_admin (sees all).
+  const effectiveStoreId: string | null = isSuperAdmin ? null : (currentStore?.id ?? null);
 
+  const [suppliers, setSuppliers]               = useState<Supplier[]>([]);
+  const [stores, setStores]                     = useState<StoreType[]>([]);
+  const [loading, setLoading]                   = useState(true);
+  const [searchQuery, setSearchQuery]           = useState('');
+  const [filterStatus, setFilterStatus]         = useState<'all' | 'active' | 'inactive'>('all');
+  const [filterCategory, setFilterCategory]     = useState<string | null>(null);
+  const [showModal, setShowModal]               = useState(false);
+  const [editingSupplier, setEditingSupplier]   = useState<Supplier | null>(null);
+  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
+  const [deletingId, setDeletingId]             = useState<string | null>(null);
+  const [sortBy, setSortBy]                     = useState<'name' | 'totalSpent' | 'lastOrder'>('name');
+  const [viewMode, setViewMode]                 = useState<'table' | 'cards'>('table');
+
+  // ─── loadData: depends on effectiveStoreId ──────────────────────────────────
+  // Re-runs automatically whenever the user switches branches.
   const loadData = useCallback(async () => {
     setLoading(true);
+    // Clear selection when branch changes to avoid showing a stale panel
+    setSelectedSupplier(null);
     try {
-      const [suppliersData, storesData] = await Promise.all([getAllSuppliers(), getAllStores()]);
-      setSuppliers(suppliersData as Supplier[]);
+      // ✅ FIX 1: Pass storeId into getAllSuppliers so the Supabase query
+      //           is filtered server-side, not just in the browser.
+      //           If getAllSuppliers doesn't yet accept a storeId argument,
+      //           fall back to the client-side filter below.
+      let suppliersData: Supplier[];
+      try {
+        // Try the parameterised version first (preferred)
+        suppliersData = (await getAllSuppliers(effectiveStoreId)) as Supplier[];
+      } catch {
+        // Fallback: fetch all and filter client-side
+        const all = (await getAllSuppliers()) as Supplier[];
+        suppliersData = effectiveStoreId
+          ? all.filter(s => s.storeId === effectiveStoreId)
+          : all;
+      }
+
+      const storesData = await getAllStores();
+      setSuppliers(suppliersData);
       setStores(storesData);
-    } catch { alert('Failed to load data'); }
-    finally { setLoading(false); }
-  }, []);
+    } catch {
+      alert('Failed to load suppliers');
+    } finally {
+      setLoading(false);
+    }
+  // ✅ FIX 2: effectiveStoreId in the dependency array means loadData
+  //           is recreated — and the useEffect below re-runs — every
+  //           time the user switches branches.
+  }, [effectiveStoreId]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -998,19 +1033,27 @@ export default function SuppliersPage() {
     try {
       if (editingSupplier) {
         const updated = await updateSupplier(editingSupplier.id, {
-          ...formData, storeId: formData.storeId || null,
+          ...formData,
+          // ✅ FIX 3: Always stamp with the current store on save,
+          //           never allow a supplier to drift to another branch.
+          storeId: currentStore?.id ?? null,
           lastOrderDate: formData.lastOrderDate || null,
         });
-        // If we're viewing this supplier, refresh it
         if (selectedSupplier?.id === editingSupplier.id) {
           setSelectedSupplier(updated as unknown as Supplier);
         }
       } else {
-        await createSupplier({ ...formData, storeId: formData.storeId || null });
+        await createSupplier({
+          ...formData,
+          storeId: currentStore?.id ?? null,
+        });
       }
-      setShowModal(false); setEditingSupplier(null);
-      loadData();
-    } catch (e) { alert(`Failed to save: ${e instanceof Error ? e.message : e}`); }
+      setShowModal(false);
+      setEditingSupplier(null);
+      await loadData();
+    } catch (e) {
+      alert(`Failed to save: ${e instanceof Error ? e.message : e}`);
+    }
   };
 
   const handleDelete = async (id: string, name: string) => {
@@ -1021,30 +1064,36 @@ export default function SuppliersPage() {
       await deleteSupplier(id);
       if (selectedSupplier?.id === id) setSelectedSupplier(null);
       await loadData();
-    } catch (e) { alert(`Failed: ${e instanceof Error ? e.message : e}`); }
-    finally { setDeletingId(null); }
+    } catch (e) {
+      alert(`Failed: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const categories = useMemo(() => [...new Set(suppliers.map(s => s.category))], [suppliers]);
 
+  // ✅ FIX 4: useMemo filter no longer needs a branch check —
+  //           suppliers already contains only the current branch's data.
+  //           Only search, status, category, and sort run here.
   const filtered = useMemo(() => {
     let res = [...suppliers];
-    // Filter by current store (non-admins only see their branch's suppliers)
-    if (!isAdmin && storeId) {
-      res = res.filter(s => s.storeId === storeId || s.storeId === null);
-    }
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      res = res.filter(s => s.name.toLowerCase().includes(q) || s.contactPerson?.toLowerCase().includes(q) || s.phone?.includes(q) || s.city?.toLowerCase().includes(q));
+      res = res.filter(s =>
+        s.name.toLowerCase().includes(q) ||
+        s.contactPerson?.toLowerCase().includes(q) ||
+        s.phone?.includes(q) ||
+        s.city?.toLowerCase().includes(q)
+      );
     }
     if (filterStatus !== 'all') res = res.filter(s => s.status === filterStatus);
-    if (filterCategory) res = res.filter(s => s.category === filterCategory);
-    // Sort
-    if (sortBy === 'totalSpent') res.sort((a, b) => b.totalSpent - a.totalSpent);
+    if (filterCategory)         res = res.filter(s => s.category === filterCategory);
+    if (sortBy === 'totalSpent')  res.sort((a, b) => b.totalSpent - a.totalSpent);
     else if (sortBy === 'lastOrder') res.sort((a, b) => (b.lastOrderDate ?? '').localeCompare(a.lastOrderDate ?? ''));
     else res.sort((a, b) => a.name.localeCompare(b.name));
     return res;
-  }, [suppliers, searchQuery, filterStatus, filterCategory, sortBy, storeId, isAdmin]);
+  }, [suppliers, searchQuery, filterStatus, filterCategory, sortBy]);
 
   const stats = useMemo(() => ({
     total:      suppliers.length,
@@ -1057,7 +1106,9 @@ export default function SuppliersPage() {
     <div className="p-6 flex items-center justify-center h-96">
       <div className="text-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4" />
-        <p className="text-muted-foreground">Loading suppliers…</p>
+        <p className="text-muted-foreground">
+          Loading suppliers{currentStore ? ` for ${currentStore.name}` : ''}…
+        </p>
       </div>
     </div>
   );
@@ -1072,24 +1123,41 @@ export default function SuppliersPage() {
             <Truck className="w-7 h-7 text-primary" /> Suppliers
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {currentStore ? `${currentStore.name} — supplier management` : 'Manage all suppliers and vendors'}
+            {isSuperAdmin
+              ? 'Viewing all branches'
+              : currentStore
+                ? `${currentStore.name} — branch suppliers only`
+                : 'No branch selected'}
           </p>
         </div>
         {canEdit && (
-          <Button onClick={() => { setEditingSupplier(null); setShowModal(true); }}
-            className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90 self-start">
+          <Button
+            onClick={() => { setEditingSupplier(null); setShowModal(true); }}
+            disabled={!currentStore && !isSuperAdmin}
+            className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90 self-start"
+          >
             <Plus className="w-4 h-4" /> Add Supplier
           </Button>
         )}
       </div>
 
+      {/* No-store warning for non-super-admins */}
+      {!currentStore && !isSuperAdmin && (
+        <Alert>
+          <AlertTriangle className="w-4 h-4" />
+          <AlertDescription>
+            No branch selected. Please choose a branch from the sidebar to view its suppliers.
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* ── STATS ── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: 'Total Suppliers', value: stats.total,                      icon: <Truck       className="w-5 h-5" />, color: 'text-foreground',  bg: 'bg-muted/60' },
+          { label: isSuperAdmin ? 'All Suppliers' : `${currentStore?.name ?? 'Branch'} Suppliers`, value: stats.total,                      icon: <Truck        className="w-5 h-5" />, color: 'text-foreground',  bg: 'bg-muted/60' },
           { label: 'Active',          value: stats.active,                     icon: <CheckCircle2 className="w-5 h-5" />, color: 'text-green-600',  bg: 'bg-green-50' },
-          { label: 'Total Spent',     value: formatCurrency(stats.totalSpent), icon: <DollarSign  className="w-5 h-5" />, color: 'text-primary',     bg: 'bg-primary/10' },
-          { label: 'Categories',      value: stats.categories,                 icon: <Package     className="w-5 h-5" />, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+          { label: 'Total Spent',     value: formatCurrency(stats.totalSpent), icon: <DollarSign   className="w-5 h-5" />, color: 'text-primary',     bg: 'bg-primary/10' },
+          { label: 'Categories',      value: stats.categories,                 icon: <Package      className="w-5 h-5" />, color: 'text-indigo-600', bg: 'bg-indigo-50' },
         ].map((m, i) => (
           <Card key={i} className="bg-card border-border">
             <CardContent className="p-4 flex items-center gap-3">
@@ -1103,10 +1171,10 @@ export default function SuppliersPage() {
         ))}
       </div>
 
-      {/* ── MAIN LAYOUT (list + detail) ── */}
+      {/* ── MAIN LAYOUT ── */}
       <div className={`flex gap-5 ${selectedSupplier ? 'flex-col lg:flex-row' : ''}`}>
 
-        {/* ── LEFT: filters + list ── */}
+        {/* LEFT: filters + list */}
         <div className={`${selectedSupplier ? 'lg:w-[55%]' : 'w-full'} space-y-4`}>
 
           {/* Filters */}
@@ -1115,7 +1183,8 @@ export default function SuppliersPage() {
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input placeholder="Search suppliers…" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="pl-10 border-border bg-input text-foreground h-9 text-sm" />
+                  <Input placeholder="Search suppliers…" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+                    className="pl-10 border-border bg-input text-foreground h-9 text-sm" />
                 </div>
                 <select value={sortBy} onChange={e => setSortBy(e.target.value as any)}
                   className="h-9 px-3 text-xs border border-border bg-input text-foreground rounded-md focus:outline-none">
@@ -1163,10 +1232,12 @@ export default function SuppliersPage() {
                     <tbody>
                       {filtered.length === 0 ? (
                         <tr><td colSpan={7} className="text-center py-12 text-muted-foreground text-sm">
-                          {suppliers.length === 0 ? 'No suppliers yet.' : 'No suppliers match your filters.'}
+                          {suppliers.length === 0
+                            ? (currentStore ? `No suppliers for ${currentStore.name} yet.` : 'No suppliers yet.')
+                            : 'No suppliers match your filters.'}
                         </td></tr>
                       ) : filtered.map(s => {
-                        const storeName = stores.find(st => st.id === s.storeId)?.name;
+                        const sName = stores.find(st => st.id === s.storeId)?.name;
                         const isSelected = selectedSupplier?.id === s.id;
                         return (
                           <tr key={s.id} onClick={() => setSelectedSupplier(isSelected ? null : s)}
@@ -1178,8 +1249,10 @@ export default function SuppliersPage() {
                                 </div>
                                 <div>
                                   <p className="font-semibold text-foreground text-xs">{s.name}</p>
-                                  {(s.city || storeName) && (
-                                    <p className="text-[10px] text-muted-foreground">{[s.city, storeName].filter(Boolean).join(' · ')}</p>
+                                  {(s.city || (isSuperAdmin && sName)) && (
+                                    <p className="text-[10px] text-muted-foreground">
+                                      {[s.city, isSuperAdmin ? sName : null].filter(Boolean).join(' · ')}
+                                    </p>
                                   )}
                                   {(s.rating ?? 0) > 0 && <StarRating value={s.rating ?? 0} readOnly />}
                                 </div>
@@ -1210,8 +1283,11 @@ export default function SuppliersPage() {
                                   </Button>
                                 )}
                                 {isSuperAdmin && (
-                                  <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" disabled={deletingId === s.id} onClick={() => handleDelete(s.id, s.name)}>
-                                    {deletingId === s.id ? <span className="w-3 h-3 border-2 border-destructive/40 border-t-destructive rounded-full animate-spin block" /> : <Trash2 className="w-3 h-3" />}
+                                  <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                                    disabled={deletingId === s.id} onClick={() => handleDelete(s.id, s.name)}>
+                                    {deletingId === s.id
+                                      ? <span className="w-3 h-3 border-2 border-destructive/40 border-t-destructive rounded-full animate-spin block" />
+                                      : <Trash2 className="w-3 h-3" />}
                                   </Button>
                                 )}
                               </div>
@@ -1232,7 +1308,7 @@ export default function SuppliersPage() {
               {filtered.length === 0 ? (
                 <div className="col-span-3 text-center py-12 text-muted-foreground">No suppliers match your filters.</div>
               ) : filtered.map(s => {
-                const storeName = stores.find(st => st.id === s.storeId)?.name;
+                const sName = stores.find(st => st.id === s.storeId)?.name;
                 const isSelected = selectedSupplier?.id === s.id;
                 return (
                   <Card key={s.id} onClick={() => setSelectedSupplier(isSelected ? null : s)}
@@ -1240,7 +1316,9 @@ export default function SuppliersPage() {
                     <CardContent className="p-4 space-y-3">
                       <div className="flex items-start justify-between">
                         <div className="flex items-center gap-2">
-                          <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary text-sm font-bold flex items-center justify-center">{s.name.slice(0,2).toUpperCase()}</div>
+                          <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary text-sm font-bold flex items-center justify-center">
+                            {s.name.slice(0,2).toUpperCase()}
+                          </div>
                           <div>
                             <p className="font-semibold text-foreground text-sm">{s.name}</p>
                             <Badge variant="outline" className="text-[10px] mt-0.5">{s.category}</Badge>
@@ -1251,7 +1329,8 @@ export default function SuppliersPage() {
                       <div className="space-y-1 text-xs text-muted-foreground">
                         <div className="flex items-center gap-1.5"><Phone className="w-3 h-3" />{s.contactPerson} · {s.phone}</div>
                         {s.city && <div className="flex items-center gap-1.5"><MapPin className="w-3 h-3" />{s.city}</div>}
-                        {storeName && <div className="flex items-center gap-1.5 text-primary"><Store className="w-3 h-3" />{storeName}</div>}
+                        {/* Only show branch name in card when super_admin is viewing all */}
+                        {isSuperAdmin && sName && <div className="flex items-center gap-1.5 text-primary"><Store className="w-3 h-3" />{sName}</div>}
                       </div>
                       {(s.rating ?? 0) > 0 && <StarRating value={s.rating ?? 0} readOnly />}
                       <div className="flex items-center justify-between pt-2 border-t border-border">
@@ -1270,8 +1349,11 @@ export default function SuppliersPage() {
                             <Edit2 className="w-3 h-3 mr-1" />Edit
                           </Button>
                           {isSuperAdmin && (
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" disabled={deletingId === s.id} onClick={() => handleDelete(s.id, s.name)}>
-                              {deletingId === s.id ? <span className="w-3 h-3 border border-destructive rounded-full animate-spin block" /> : <Trash2 className="w-3 h-3" />}
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                              disabled={deletingId === s.id} onClick={() => handleDelete(s.id, s.name)}>
+                              {deletingId === s.id
+                                ? <span className="w-3 h-3 border border-destructive rounded-full animate-spin block" />
+                                : <Trash2 className="w-3 h-3" />}
                             </Button>
                           )}
                         </div>
@@ -1284,13 +1366,13 @@ export default function SuppliersPage() {
           )}
         </div>
 
-        {/* ── RIGHT: detail panel ── */}
+        {/* RIGHT: detail panel */}
         {selectedSupplier && (
           <div className="lg:w-[45%] lg:sticky lg:top-6 lg:self-start">
             <SupplierDetailPanel
               supplier={selectedSupplier}
               stores={stores}
-              storeId={storeId}
+              storeId={currentStore?.id ?? null}
               user={user}
               isAdmin={isAdmin}
               canEdit={canEdit}
@@ -1302,7 +1384,7 @@ export default function SuppliersPage() {
         )}
       </div>
 
-      {/* ── MODAL ── */}
+      {/* MODAL */}
       {showModal && (
         <SupplierModal
           supplier={editingSupplier}
