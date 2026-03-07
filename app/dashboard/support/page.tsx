@@ -251,7 +251,10 @@ export default function SupportPage() {
 
   const isCustomer = isCustomerRole(user?.role);
   const isAdmin    = ['super_admin', 'admin'].includes(user?.role ?? '');
-  const storeId    = currentStore?.id ?? null;
+  // Customers have a fixed store from registration — use it even when
+  // currentStore is null (customers never select a branch manually).
+  const customerStoreId = isCustomer ? ((user as any)?.storeId ?? (user as any)?.store_id ?? null) : null;
+  const storeId = isCustomer ? customerStoreId : (currentStore?.id ?? null);
 
   const autofillName  = isCustomer
     ? `${user?.firstName ?? ''} ${user?.lastName ?? ''}`.trim() || user?.email || ''
@@ -318,8 +321,9 @@ export default function SupportPage() {
     customerName: string; customerPhone: string;
     subject: string; category: string; message: string; attachments: File[];
   }) => {
-    if (!currentStore?.id) {
-      alert('No store selected. Please select a branch from the sidebar.');
+    const ticketStoreId = isCustomer ? customerStoreId : currentStore?.id;
+    if (!ticketStoreId) {
+      alert('No branch assigned. Please contact staff to assign you to a branch.');
       return;
     }
     try {
@@ -329,7 +333,7 @@ export default function SupportPage() {
         subject:       data.subject,
         category:      data.category,
         message:       data.message,
-        storeId:       currentStore.id,
+        storeId:       ticketStoreId,
         attachments:   data.attachments,
       });
       await loadTickets();
@@ -427,7 +431,7 @@ export default function SupportPage() {
           )}
           <Button
             onClick={() => setShowModal(true)}
-            disabled={!currentStore}
+            disabled={isCustomer ? !customerStoreId : !currentStore}
             className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
           >
             <Plus className="w-4 h-4" /> New Ticket
@@ -435,10 +439,16 @@ export default function SupportPage() {
         </div>
       </div>
 
-      {!currentStore && (
+      {!currentStore && !isCustomer && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>No store selected. Please select a branch from the sidebar.</AlertDescription>
+        </Alert>
+      )}
+      {isCustomer && !customerStoreId && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>No branch assigned to your account. Please contact staff.</AlertDescription>
         </Alert>
       )}
 
