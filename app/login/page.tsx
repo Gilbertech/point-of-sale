@@ -167,44 +167,30 @@ export default function LoginPage() {
 
       const userId = authData.user.id;
 
-      // ── Step 2: Auto-confirm via server API route ──
+      // ── Steps 2+3: Server-side confirm + write profiles (bypasses RLS) ──────
+      // ROOT CAUSE FIX: We send ALL profile writes to the server API route which
+      // uses the service role key. The anon client was being blocked by RLS when
+      // trying to write to app_users, so store_id was silently never saved —
+      // that's why customers appeared as "unassigned" in User Management.
       setRegStep('Activating account…');
       const confirmRes = await fetch('/api/confirm-customer', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ userId }),
+        body:    JSON.stringify({
+          userId,
+          email:     reg.email,
+          firstName: reg.firstName,
+          lastName:  reg.lastName,
+          phone:     reg.phone || null,
+          storeId:   reg.storeId,
+        }),
       });
 
       if (!confirmRes.ok) {
         const confirmErr = await confirmRes.json().catch(() => ({}));
-        console.error('[Register] Confirm failed:', confirmErr);
-        // Non-fatal: continue anyway — sign-in may still work if Supabase
-        // "Confirm email" was already disabled in the dashboard
+        console.error('[Register] Server setup failed:', confirmErr);
+        // Non-fatal: sign-in may still work, but store_id may not be saved
       }
-
-      // ── Step 3: Write profile rows ──
-      setRegStep('Saving profile…');
-
-      await supabase.from('app_users').upsert({
-        id:         userId,
-        email:      reg.email,
-        first_name: reg.firstName,
-        last_name:  reg.lastName,
-        role:       'customer',
-        is_active:  true,
-        store_id:   reg.storeId,
-      }, { onConflict: 'id' });
-
-      await supabase.from('customers').upsert([{
-        id:             userId,
-        first_name:     reg.firstName,
-        last_name:      reg.lastName,
-        email:          reg.email,
-        phone:          reg.phone || null,
-        store_id:       reg.storeId,
-        loyalty_points: 0,
-        total_spent:    0,
-      }], { onConflict: 'id' });
 
       // ── Step 4: Sign in immediately ──
       setRegStep('Signing you in…');
