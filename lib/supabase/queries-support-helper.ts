@@ -85,11 +85,15 @@ export const resolveWorkerQuery = async (queryId: string): Promise<boolean> => {
 
 // ─── Attachment Upload ────────────────────────────────────────────────────────
 //
-// ONE-TIME SETUP in Supabase Dashboard:
-//   Storage → New bucket → Name: "support-attachments" → ✅ Public bucket → Create
-//
-// The support_tickets table also needs an attachments column:
-//   ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS attachments text[] DEFAULT '{}';
+// SETUP CHECKLIST in Supabase Dashboard:
+//   1. Storage → New bucket → Name: "support-attachments" → ✅ Public bucket → Create
+//   2. Run these RLS policies (already done if you ran the SQL):
+//      CREATE POLICY "Allow uploads" ON storage.objects
+//        FOR INSERT WITH CHECK (bucket_id = 'support-attachments');
+//      CREATE POLICY "Allow reads" ON storage.objects
+//        FOR SELECT USING (bucket_id = 'support-attachments');
+//   3. support_tickets table needs attachments column:
+//      ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS attachments text[] DEFAULT '{}';
 
 const BUCKET = 'support-attachments';
 
@@ -99,22 +103,28 @@ async function uploadAttachment(file: File, ticketId: string): Promise<string | 
     const safeName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
     const path     = `${ticketId}/${safeName}`;
 
-    const { error: uploadError } = await supabase.storage
+    console.log(`[Attachment] Uploading: ${file.name} → ${BUCKET}/${path}`);
+
+    const { data: uploadData, error: uploadError } = await supabase.storage
       .from(BUCKET)
       .upload(path, file, { upsert: false, contentType: file.type });
 
     if (uploadError) {
-      console.error('[Attachment] Upload failed:', uploadError.message);
+      console.error('[Attachment] Upload FAILED:', uploadError.message, uploadError);
       return null;
     }
 
-    // Always store the full public URL — never just the path
-    const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
-    console.log('[Attachment] Uploaded OK:', data?.publicUrl);
-    return data?.publicUrl ?? null;
+    console.log('[Attachment] Upload OK, path:', uploadData?.path);
+
+    // Always use getPublicUrl — it never fails, just builds the URL
+    const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(path);
+    const publicUrl = urlData?.publicUrl ?? null;
+
+    console.log('[Attachment] Public URL:', publicUrl);
+    return publicUrl;
 
   } catch (e) {
-    console.error('[Attachment] Exception:', e);
+    console.error('[Attachment] Exception during upload:', e);
     return null;
   }
 }
@@ -147,7 +157,9 @@ export const createSupportTicket = async (ticket: {
   storeId:       string;
   attachments?:  File[];
 }) => {
-  // Step 1: Insert ticket to get its ID (used as storage folder)
+  console.log('[createSupportTicket] Starting, files:', ticket.attachments?.length ?? 0);
+
+  // ── Step 1: Insert ticket row to get its ID (used as storage folder name) ──
   const { data, error } = await supabase
     .from('support_tickets')
     .insert([{
@@ -158,37 +170,59 @@ export const createSupportTicket = async (ticket: {
       category:       ticket.category,
       status:         'open',
       store_id:       ticket.storeId,
-      attachments:    [],
+      attachments:    [],          // start empty, updated after uploads
     }])
-    .select().single();
+    .select()
+    .single();
 
   if (error) throw new Error(`Failed to create ticket: ${error.message}`);
+  console.log('[createSupportTicket] Ticket inserted, id:', data.id);
 
-  // Step 2: Upload files and collect public URLs
+  // ── Step 2: Upload files and collect public URLs ──
   const files = ticket.attachments ?? [];
-  if (files.length > 0) {
-    const results  = await Promise.all(files.map(f => uploadAttachment(f, data.id)));
-    const urls     = results.filter((u): u is string => !!u);
+  let savedUrls: string[] = [];
 
-    if (urls.length > 0) {
+  if (files.length > 0) {
+    console.log(`[createSupportTicket] Uploading ${files.length} file(s)…`);
+
+    const results = await Promise.all(
+      files.map(f => uploadAttachment(f, data.id))
+    );
+
+    savedUrls = results.filter((u): u is string => !!u);
+    console.log('[createSupportTicket] Uploaded URLs:', savedUrls);
+
+    if (savedUrls.length > 0) {
+      // ── Step 3: Write URLs back to the ticket row ──
       const { error: updateError } = await supabase
         .from('support_tickets')
-        .update({ attachments: urls })
+        .update({ attachments: savedUrls })
         .eq('id', data.id);
 
       if (updateError) {
-        console.error('[Attachment] Failed to save URLs:', updateError.message);
+        // Don't throw — ticket was created, just log the attachment save failure
+        console.error('[createSupportTicket] Failed to save attachment URLs:', updateError.message);
+      } else {
+        console.log('[createSupportTicket] Attachment URLs saved to DB ✓');
       }
+    } else {
+      console.warn('[createSupportTicket] All uploads failed — no URLs to save');
     }
   }
 
   return {
-    id: data.id, customerName: data.customer_name, customerPhone: data.customer_phone || '',
-    subject: data.subject, message: data.message, category: data.category,
-    status: data.status as 'open' | 'in-progress' | 'resolved',
-    reply: data.reply || null,
-    attachments: Array.isArray(data.attachments) ? data.attachments : [],
-    storeId: data.store_id ?? null, createdAt: new Date(data.created_at),
+    id:           data.id,
+    customerName: data.customer_name,
+    customerPhone: data.customer_phone || '',
+    subject:      data.subject,
+    message:      data.message,
+    category:     data.category,
+    status:       data.status as 'open' | 'in-progress' | 'resolved',
+    reply:        data.reply || null,
+    // Return the URLs we actually saved, not the empty [] from initial insert
+    attachments:  savedUrls,
+    storeId:      data.store_id ?? null,
+    createdAt:    new Date(data.created_at),
   };
 };
 
