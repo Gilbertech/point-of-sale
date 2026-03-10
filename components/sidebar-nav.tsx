@@ -24,7 +24,7 @@ const NAVIGATION_ITEMS = [
   { label: 'Workers',        href: '/dashboard/worker',       icon: HardHat,                roles: ['super_admin','admin','manager'] },
   { label: 'Stock Take',     href: '/dashboard/stocktake',    icon: ClipboardCheck,         roles: ['super_admin','admin','manager','inventory_staff'] },
   { label: 'Suppliers',      href: '/dashboard/supplier',     icon: Truck,                  roles: ['super_admin','admin','manager'] },
-  { label: 'Support Tickets',href: '/dashboard/support',      icon: Headphones,             roles: ['super_admin','admin','manager','customer'] },
+  
   { label: 'Queries',        href: '/dashboard/query',        icon: MessageCircleQuestion,  roles: ['cashier','inventory_staff'] },
   { label: 'Settings',       href: '/dashboard/settings',     icon: Settings2,              roles: ['super_admin'] },
   { label: 'User Management',href: '/dashboard/users',        icon: ShieldCheck,            roles: ['super_admin'] },
