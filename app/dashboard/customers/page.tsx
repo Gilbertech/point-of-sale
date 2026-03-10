@@ -202,15 +202,120 @@ function ReplyPanel({ item, type, user, onClose, onSaved }: {
   );
 }
 
+// ─── Attachment renderer (shared) ───────────────────────────────────────────
+
+function AttachmentGrid({ attachments }: { attachments: string[] }) {
+  const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+
+  if (!attachments || attachments.length === 0) return null;
+
+  return (
+    <div>
+      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+        📎 Attachments ({attachments.length})
+      </p>
+      <div className="grid grid-cols-3 gap-2">
+        {attachments.map((raw, i) => {
+          // Resolve partial paths → full public URL
+          const url = raw.startsWith('http')
+            ? raw
+            : `${SUPABASE_URL}/storage/v1/object/public/support-attachments/${raw}`;
+          const isPdf = raw.toLowerCase().endsWith('.pdf');
+
+          return isPdf ? (
+            <a key={i} href={url} target="_blank" rel="noreferrer"
+              className="aspect-square rounded-lg border border-border bg-muted flex flex-col items-center justify-center gap-1 hover:bg-accent transition text-muted-foreground text-xs font-medium p-2 text-center">
+              <Paperclip className="w-6 h-6" />
+              PDF {i + 1}
+            </a>
+          ) : (
+            <a key={i} href={url} target="_blank" rel="noreferrer"
+              className="rounded-lg overflow-hidden border border-border block group bg-muted">
+              <div className="relative aspect-square">
+                <img
+                  src={url}
+                  alt={`Attachment ${i + 1}`}
+                  className="w-full h-full object-cover group-hover:opacity-80 transition"
+                  onError={e => {
+                    const img = e.currentTarget;
+                    img.style.display = 'none';
+                    const wrap = img.parentElement;
+                    if (wrap && !wrap.querySelector('.att-err')) {
+                      const fb = document.createElement('div');
+                      fb.className = 'att-err absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted-foreground text-[10px] p-1 text-center';
+                      fb.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>Click to open`;
+                      wrap.appendChild(fb);
+                    }
+                  }}
+                />
+              </div>
+            </a>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Ticket Reply Panel ──────────────────────────────────────────────────────
 
-function TicketReplyPanel({ ticket, user, onClose, onSaved }: {
+function TicketReplyPanel({ ticket: initial, user, onClose, onSaved }: {
   ticket: SupportTicket; user: any; onClose: () => void; onSaved: () => void;
 }) {
-  const [reply, setReply]   = useState(ticket.reply ?? '');
-  const [status, setStatus] = useState(ticket.status);
-  const [saving, setSaving] = useState(false);
-  const [error, setError]   = useState('');
+  // Re-fetch fresh ticket data on open so attachments are always up to date
+  const [ticket, setTicket]   = useState<SupportTicket>(initial);
+  const [fetching, setFetching] = useState(true);
+  const [reply, setReply]     = useState(initial.reply ?? '');
+  const [status, setStatus]   = useState(initial.status);
+  const [saving, setSaving]   = useState(false);
+  const [error, setError]     = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchFresh = async () => {
+      setFetching(true);
+      try {
+        const { data, error: fetchErr } = await supabase
+          .from('support_tickets')
+          .select('*')
+          .eq('id', initial.id)
+          .single();
+
+        if (fetchErr || !data) {
+          console.error('[TicketPanel] Fresh fetch failed:', fetchErr?.message);
+          return;
+        }
+
+        if (cancelled) return;
+
+        const fresh: SupportTicket = {
+          id:            data.id,
+          customerName:  data.customer_name ?? 'Unknown',
+          customerPhone: data.customer_phone ?? '',
+          subject:       data.subject ?? '',
+          message:       data.message ?? '',
+          category:      data.category ?? 'General',
+          status:        data.status ?? 'open',
+          reply:         data.reply ?? null,
+          storeId:       data.store_id ?? null,
+          // Normalise: could be null, [], or a real array
+          attachments:   Array.isArray(data.attachments)
+                           ? data.attachments.filter(Boolean)
+                           : [],
+          createdAt:     data.created_at,
+        };
+
+        console.log('[TicketPanel] attachments from DB:', fresh.attachments);
+        setTicket(fresh);
+        setReply(fresh.reply ?? '');
+        setStatus(fresh.status);
+      } finally {
+        if (!cancelled) setFetching(false);
+      }
+    };
+    fetchFresh();
+    return () => { cancelled = true; };
+  }, [initial.id]);
 
   const handleSave = async () => {
     setSaving(true); setError('');
@@ -227,65 +332,101 @@ function TicketReplyPanel({ ticket, user, onClose, onSaved }: {
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-lg bg-background rounded-2xl shadow-2xl border border-border flex flex-col max-h-[90vh]">
+
+        {/* Header */}
         <div className="flex items-start justify-between p-5 border-b border-border shrink-0">
           <div className="min-w-0 pr-4">
             <div className="flex items-center gap-2 mb-1">
               <Ticket className="w-4 h-4 text-purple-500" />
               <span className="font-bold text-foreground text-sm">{ticket.subject}</span>
             </div>
-            <p className="text-xs text-muted-foreground">{ticket.customerName}{ticket.customerPhone && ` · ${ticket.customerPhone}`} · {ticket.category} · {new Date(ticket.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+            <p className="text-xs text-muted-foreground">
+              {ticket.customerName}
+              {ticket.customerPhone && ` · ${ticket.customerPhone}`}
+              {` · ${ticket.category}`}
+              {` · ${new Date(ticket.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`}
+            </p>
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose} className="shrink-0 h-8 w-8"><X className="w-4 h-4" /></Button>
+          <Button variant="ghost" size="icon" onClick={onClose} className="shrink-0 h-8 w-8">
+            <X className="w-4 h-4" />
+          </Button>
         </div>
+
+        {/* Body */}
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
           {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
-          <div className="bg-muted rounded-xl p-4">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Ticket Message</p>
-            <p className="text-sm text-foreground leading-relaxed">{ticket.message}</p>
-          </div>
-          {ticket.attachments.length > 0 && (
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Attachments</p>
-              <div className="grid grid-cols-3 gap-2">
-                {ticket.attachments.map((url, i) => (
-                  <a key={i} href={url} target="_blank" rel="noreferrer" className="rounded-lg overflow-hidden border border-border">
-                    <img src={url} alt="" className="w-full aspect-square object-cover hover:opacity-80 transition" />
-                  </a>
-                ))}
+
+          {fetching ? (
+            <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground text-sm">
+              <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              Loading ticket details…
+            </div>
+          ) : (
+            <>
+              {/* Message */}
+              <div className="bg-muted rounded-xl p-4">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Ticket Message</p>
+                <p className="text-sm text-foreground leading-relaxed">{ticket.message}</p>
               </div>
-            </div>
+
+              {/* Attachments — always rendered, shows count or "none" */}
+              {ticket.attachments.length > 0 ? (
+                <AttachmentGrid attachments={ticket.attachments} />
+              ) : (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50 border border-border">
+                  <Paperclip className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <p className="text-xs text-muted-foreground">No attachments on this ticket.</p>
+                </div>
+              )}
+
+              {/* Previous reply */}
+              {ticket.reply && (
+                <div className="bg-primary/5 border border-primary/20 rounded-xl p-4">
+                  <p className="text-xs font-semibold text-primary uppercase tracking-wide mb-2">Previous Reply</p>
+                  <p className="text-sm text-foreground leading-relaxed">{ticket.reply}</p>
+                </div>
+              )}
+
+              {/* Status */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Update Status</label>
+                <div className="flex gap-2 flex-wrap">
+                  {(['open', 'in-progress', 'resolved'] as const).map(s => {
+                    const cfg = TICKET_STATUS[s];
+                    return (
+                      <button key={s} onClick={() => setStatus(s)} style={{
+                        padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                        border: `2px solid ${status === s ? cfg.color : '#e5e7eb'}`,
+                        background: status === s ? cfg.bg : 'white',
+                        color: status === s ? cfg.color : '#9ca3af',
+                        cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
+                      }}>{cfg.label}</button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Reply box */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Your Reply <span className="normal-case font-normal">(visible to customer)</span>
+                </label>
+                <textarea
+                  value={reply}
+                  onChange={e => setReply(e.target.value)}
+                  rows={4}
+                  placeholder="Write your response..."
+                  className="w-full px-3 py-2.5 text-sm border border-border rounded-xl bg-input text-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+                />
+              </div>
+            </>
           )}
-          {ticket.reply && (
-            <div className="bg-primary/5 border border-primary/20 rounded-xl p-4">
-              <p className="text-xs font-semibold text-primary uppercase tracking-wide mb-2">Previous Reply</p>
-              <p className="text-sm text-foreground leading-relaxed">{ticket.reply}</p>
-            </div>
-          )}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Update Status</label>
-            <div className="flex gap-2 flex-wrap">
-              {(['open', 'in-progress', 'resolved'] as const).map(s => {
-                const cfg = TICKET_STATUS[s];
-                return (
-                  <button key={s} onClick={() => setStatus(s)} style={{
-                    padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600,
-                    border: `2px solid ${status === s ? cfg.color : '#e5e7eb'}`,
-                    background: status === s ? cfg.bg : 'white',
-                    color: status === s ? cfg.color : '#9ca3af',
-                    cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s',
-                  }}>{cfg.label}</button>
-                );
-              })}
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Your Reply <span className="normal-case font-normal">(visible to customer)</span></label>
-            <textarea value={reply} onChange={e => setReply(e.target.value)} rows={4} placeholder="Write your response..." className="w-full px-3 py-2.5 text-sm border border-border rounded-xl bg-input text-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none" />
-          </div>
         </div>
+
+        {/* Footer */}
         <div className="p-5 border-t border-border flex gap-3 shrink-0">
           <Button variant="outline" className="flex-1" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button className="flex-1 gap-2" onClick={handleSave} disabled={saving}>
+          <Button className="flex-1 gap-2" onClick={handleSave} disabled={saving || fetching}>
             <Send className="w-4 h-4" />{saving ? 'Saving…' : 'Save & Reply'}
           </Button>
         </div>
