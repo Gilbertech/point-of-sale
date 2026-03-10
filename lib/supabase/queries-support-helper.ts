@@ -95,7 +95,7 @@ export const resolveWorkerQuery = async (queryId: string): Promise<boolean> => {
 //   3. support_tickets table needs attachments column:
 //      ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS attachments text[] DEFAULT '{}';
 
-const BUCKET = 'support-attachments';
+const BUCKET = 'complaint-images';
 
 async function uploadAttachment(file: File, ticketId: string): Promise<string | null> {
   try {
