@@ -1,8 +1,8 @@
 'use client';
 // app/login/page.tsx
-// ✅ No email confirmation required — customers are signed in immediately after registration
-// ✅ Branch selector falls back to ALL stores if is_active filter returns empty
-// ✅ store_id saved to both customers and app_users tables
+// ✅ Email confirmation bypassed via /api/confirm-customer (server-side Admin API)
+// ✅ Customer is signed in immediately after registration — no email check needed
+// ✅ Branch selector with two-attempt fallback
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -47,16 +47,16 @@ export default function LoginPage() {
   const [storesError, setStoresError]     = useState('');
   const [regLoading, setRegLoading]       = useState(false);
   const [regError, setRegError]           = useState('');
+  const [regStep, setRegStep]             = useState('');   // progress message
 
   const setRegField = (k: keyof typeof reg, v: string) =>
     setReg(prev => ({ ...prev, [k]: v }));
 
-  // Redirect if already authenticated
   useEffect(() => {
     if (!loading && isAuthenticated) router.push('/dashboard');
   }, [loading, isAuthenticated, router]);
 
-  // ── Robust store fetching with two-attempt fallback ──────────────────────
+  // ── Robust store fetching ────────────────────────────────────────────────
   useEffect(() => {
     if (view !== 'register') return;
 
@@ -66,43 +66,24 @@ export default function LoginPage() {
       setStores([]);
 
       try {
-        // Attempt 1 — active stores only
         const { data: activeData, error: activeError } = await supabase
-          .from('stores')
-          .select('id, name, address')
-          .eq('is_active', true)
-          .order('name');
+          .from('stores').select('id, name, address').eq('is_active', true).order('name');
 
         if (!activeError && activeData && activeData.length > 0) {
-          setStores(activeData);
-          return;
+          setStores(activeData); return;
         }
 
-        if (activeError) {
-          console.warn('[Stores] is_active filter error:', activeError.message);
-        } else {
-          console.warn('[Stores] is_active=true returned 0 rows — trying without filter');
-        }
-
-        // Attempt 2 — all stores, no filter
         const { data: allData, error: allError } = await supabase
-          .from('stores')
-          .select('id, name, address')
-          .order('name');
+          .from('stores').select('id, name, address').order('name');
 
         if (!allError && allData && allData.length > 0) {
           setStores(allData);
         } else if (allError) {
-          console.error('[Stores] Unfiltered query also failed:', allError.message);
-          setStoresError(
-            'Could not load branches. In Supabase → Authentication → Policies → stores, add: ' +
-            'CREATE POLICY "anon read stores" ON stores FOR SELECT USING (true);'
-          );
+          setStoresError('Could not load branches. Please contact staff.');
         } else {
-          setStoresError('No branches found. Please ask your administrator to add store branches.');
+          setStoresError('No branches found. Please ask your administrator to add branches.');
         }
       } catch (e) {
-        console.error('[Stores] Exception:', e);
         setStoresError('Failed to load branches. Please refresh and try again.');
       } finally {
         setStoresLoading(false);
@@ -131,13 +112,12 @@ export default function LoginPage() {
   };
 
   // ── Register handler ─────────────────────────────────────────────────────
-  // NO email verification — customer is signed in immediately after signup.
   //
-  // To disable Supabase's email confirmation globally:
-  //   Supabase Dashboard → Authentication → Email → Disable "Confirm email"
-  //
-  // This code also calls supabase.auth.signInWithPassword() right after signUp
-  // so the session is established instantly regardless of the Supabase setting.
+  // Flow:
+  //   1. supabase.auth.signUp()            → creates unconfirmed account
+  //   2. POST /api/confirm-customer        → server confirms it via Admin API
+  //   3. supabase.auth.signInWithPassword  → now succeeds (account confirmed)
+  //   4. redirect to /dashboard/query
   //
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -153,27 +133,24 @@ export default function LoginPage() {
 
     setRegLoading(true);
     setRegError('');
+    setRegStep('Checking email…');
 
     try {
-      // Check if email already exists
+      // ── Check for existing account ──
       const { data: existing } = await supabase
-        .from('app_users')
-        .select('id')
-        .eq('email', reg.email)
-        .maybeSingle();
+        .from('app_users').select('id').eq('email', reg.email).maybeSingle();
 
       if (existing) {
         setRegError('An account with this email already exists. Please sign in.');
-        setRegLoading(false);
         return;
       }
 
-      // Step 1: Create Supabase Auth account (no email confirmation)
+      // ── Step 1: Create auth account ──
+      setRegStep('Creating account…');
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email:    reg.email,
         password: reg.password,
         options: {
-          // emailRedirectTo is intentionally omitted — we don't want confirmation emails
           data: {
             first_name: reg.firstName,
             last_name:  reg.lastName,
@@ -183,83 +160,79 @@ export default function LoginPage() {
         },
       });
 
-      if (authError) {
-        setRegError(authError.message);
-        setRegLoading(false);
-        return;
-      }
-
-      if (!authData.user) {
-        setRegError('Registration failed. Please try again.');
-        setRegLoading(false);
+      if (authError || !authData.user) {
+        setRegError(authError?.message ?? 'Registration failed. Please try again.');
         return;
       }
 
       const userId = authData.user.id;
 
-      // Step 2: Upsert app_users row with full profile + store_id
-      const { error: updateError } = await supabase
-        .from('app_users')
-        .upsert({
-          id:         userId,
-          email:      reg.email,
-          first_name: reg.firstName,
-          last_name:  reg.lastName,
-          role:       'customer',
-          is_active:  true,
-          store_id:   reg.storeId,
-        }, { onConflict: 'id' });
+      // ── Step 2: Auto-confirm via server API route ──
+      setRegStep('Activating account…');
+      const confirmRes = await fetch('/api/confirm-customer', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ userId }),
+      });
 
-      if (updateError) {
-        console.error('[Register] app_users upsert failed:', updateError.message);
+      if (!confirmRes.ok) {
+        const confirmErr = await confirmRes.json().catch(() => ({}));
+        console.error('[Register] Confirm failed:', confirmErr);
+        // Non-fatal: continue anyway — sign-in may still work if Supabase
+        // "Confirm email" was already disabled in the dashboard
       }
 
-      // Step 3: Create customers record
-      const { error: customerError } = await supabase
-        .from('customers')
-        .upsert([{
-          id:             userId,
-          first_name:     reg.firstName,
-          last_name:      reg.lastName,
-          email:          reg.email,
-          phone:          reg.phone || null,
-          store_id:       reg.storeId,
-          loyalty_points: 0,
-          total_spent:    0,
-        }], { onConflict: 'id' });
+      // ── Step 3: Write profile rows ──
+      setRegStep('Saving profile…');
 
-      if (customerError) {
-        console.error('[Register] customers upsert failed:', customerError.message);
-      }
+      await supabase.from('app_users').upsert({
+        id:         userId,
+        email:      reg.email,
+        first_name: reg.firstName,
+        last_name:  reg.lastName,
+        role:       'customer',
+        is_active:  true,
+        store_id:   reg.storeId,
+      }, { onConflict: 'id' });
 
-      // Step 4: Sign in immediately — bypasses email confirmation entirely.
-      // Even if Supabase sends a confirmation email, the user is already logged in.
+      await supabase.from('customers').upsert([{
+        id:             userId,
+        first_name:     reg.firstName,
+        last_name:      reg.lastName,
+        email:          reg.email,
+        phone:          reg.phone || null,
+        store_id:       reg.storeId,
+        loyalty_points: 0,
+        total_spent:    0,
+      }], { onConflict: 'id' });
+
+      // ── Step 4: Sign in immediately ──
+      setRegStep('Signing you in…');
       const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
         email:    reg.email,
         password: reg.password,
       });
 
       if (signInError || !signInData.session) {
-        // Sign-in failed — most likely Supabase "Confirm email" is ON and the
-        // account is unconfirmed. Redirect to login with a helpful message.
-        console.warn('[Register] Auto sign-in failed:', signInError?.message);
-        // Fall back to login view with pre-filled email
+        console.error('[Register] Sign-in after registration failed:', signInError?.message);
+        // Fall back to login page with helpful message
         setView('login');
         setEmail(reg.email);
         setError(
-          'Account created! Please check your email to confirm your account, then sign in. ' +
-          '(To skip this: Supabase Dashboard → Auth → Email → disable "Confirm email")'
+          'Account created! You can now sign in. ' +
+          '(If this fails, go to Supabase → Authentication → Email → disable "Confirm email")'
         );
         return;
       }
 
-      // Step 5: Redirect to customer dashboard
+      // ── Step 5: Redirect ──
       router.push('/dashboard/query');
 
     } catch (err) {
       setRegError(err instanceof Error ? err.message : 'Registration failed.');
     } finally {
       setRegLoading(false);
+      setRegStep('');
     }
   };
 
@@ -297,11 +270,9 @@ export default function LoginPage() {
                   <Label htmlFor="login-email">Email</Label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      id="login-email" type="email" placeholder="you@example.com"
+                    <Input id="login-email" type="email" placeholder="you@example.com"
                       value={email} onChange={e => setEmail(e.target.value)}
-                      className="pl-10" required autoComplete="email"
-                    />
+                      className="pl-10" required autoComplete="email" />
                   </div>
                 </div>
 
@@ -309,11 +280,9 @@ export default function LoginPage() {
                   <Label htmlFor="login-password">Password</Label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      id="login-password" type="password" placeholder="••••••••"
+                    <Input id="login-password" type="password" placeholder="••••••••"
                       value={password} onChange={e => setPassword(e.target.value)}
-                      className="pl-10" required autoComplete="current-password"
-                    />
+                      className="pl-10" required autoComplete="current-password" />
                   </div>
                 </div>
 
@@ -325,11 +294,8 @@ export default function LoginPage() {
               <div className="mt-5 pt-4 border-t border-border text-center">
                 <p className="text-sm text-muted-foreground">
                   New customer?{' '}
-                  <button
-                    type="button"
-                    onClick={() => { setView('register'); setError(''); }}
-                    className="text-primary font-semibold hover:underline"
-                  >
+                  <button type="button" onClick={() => { setView('register'); setError(''); }}
+                    className="text-primary font-semibold hover:underline">
                     Create an account
                   </button>
                 </p>
@@ -345,9 +311,7 @@ export default function LoginPage() {
               <CardTitle className="text-xl text-foreground flex items-center gap-2">
                 <UserPlus className="w-5 h-5" /> Customer Registration
               </CardTitle>
-              <CardDescription>
-                Create your account to track orders and submit queries
-              </CardDescription>
+              <CardDescription>Create your account to track orders and submit queries</CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleRegister} className="space-y-4">
@@ -360,19 +324,11 @@ export default function LoginPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label>First Name *</Label>
-                    <Input
-                      value={reg.firstName}
-                      onChange={e => setRegField('firstName', e.target.value)}
-                      placeholder="Jane" required
-                    />
+                    <Input value={reg.firstName} onChange={e => setRegField('firstName', e.target.value)} placeholder="Jane" required />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Last Name *</Label>
-                    <Input
-                      value={reg.lastName}
-                      onChange={e => setRegField('lastName', e.target.value)}
-                      placeholder="Doe" required
-                    />
+                    <Input value={reg.lastName} onChange={e => setRegField('lastName', e.target.value)} placeholder="Doe" required />
                   </div>
                 </div>
 
@@ -380,24 +336,17 @@ export default function LoginPage() {
                   <Label>Email *</Label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      type="email" value={reg.email}
-                      onChange={e => setRegField('email', e.target.value)}
-                      placeholder="you@example.com" className="pl-10" required
-                    />
+                    <Input type="email" value={reg.email} onChange={e => setRegField('email', e.target.value)}
+                      placeholder="you@example.com" className="pl-10" required />
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
                   <Label>Phone <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
-                  <Input
-                    type="tel" value={reg.phone}
-                    onChange={e => setRegField('phone', e.target.value)}
-                    placeholder="+254 7XX XXX XXX"
-                  />
+                  <Input type="tel" value={reg.phone} onChange={e => setRegField('phone', e.target.value)} placeholder="+254 7XX XXX XXX" />
                 </div>
 
-                {/* ── Branch selector ── */}
+                {/* Branch selector */}
                 <div className="space-y-1.5">
                   <Label className="flex items-center gap-1.5">
                     <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
@@ -413,13 +362,8 @@ export default function LoginPage() {
                     <div className="px-3 py-3 border border-destructive/30 bg-destructive/5 rounded-md space-y-1">
                       <p className="text-sm text-destructive font-medium">⚠️ Could not load branches</p>
                       <p className="text-xs text-muted-foreground leading-relaxed">{storesError}</p>
-                      <button
-                        type="button"
-                        onClick={() => { setView('login'); setTimeout(() => setView('register'), 50); }}
-                        className="text-xs text-primary font-semibold hover:underline mt-1"
-                      >
-                        ↻ Try again
-                      </button>
+                      <button type="button" onClick={() => { setView('login'); setTimeout(() => setView('register'), 50); }}
+                        className="text-xs text-primary font-semibold hover:underline mt-1">↻ Try again</button>
                     </div>
                   ) : stores.length === 0 ? (
                     <div className="px-3 py-2.5 border border-input rounded-md text-sm text-muted-foreground">
@@ -428,22 +372,16 @@ export default function LoginPage() {
                   ) : (
                     <div className="space-y-2 max-h-52 overflow-y-auto pr-0.5">
                       {stores.map(store => (
-                        <button
-                          key={store.id}
-                          type="button"
-                          onClick={() => setRegField('storeId', store.id)}
+                        <button key={store.id} type="button" onClick={() => setRegField('storeId', store.id)}
                           className={`w-full text-left px-4 py-3 rounded-lg border-2 transition-all ${
                             reg.storeId === store.id
                               ? 'border-primary bg-primary/5 text-foreground'
                               : 'border-border hover:border-primary/40 hover:bg-muted/50 text-foreground'
-                          }`}
-                        >
+                          }`}>
                           <div className="flex items-center justify-between gap-2">
                             <div className="min-w-0">
                               <p className="font-semibold text-sm">{store.name}</p>
-                              {store.address && (
-                                <p className="text-xs text-muted-foreground mt-0.5">{store.address}</p>
-                              )}
+                              {store.address && <p className="text-xs text-muted-foreground mt-0.5">{store.address}</p>}
                             </div>
                             {reg.storeId === store.id && (
                               <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
@@ -463,12 +401,8 @@ export default function LoginPage() {
                   <Label>Password *</Label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      type="password" value={reg.password}
-                      onChange={e => setRegField('password', e.target.value)}
-                      placeholder="Min 6 characters" className="pl-10" required
-                      autoComplete="new-password"
-                    />
+                    <Input type="password" value={reg.password} onChange={e => setRegField('password', e.target.value)}
+                      placeholder="Min 6 characters" className="pl-10" required autoComplete="new-password" />
                   </div>
                 </div>
 
@@ -476,24 +410,22 @@ export default function LoginPage() {
                   <Label>Confirm Password *</Label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      type="password" value={reg.confirm}
-                      onChange={e => setRegField('confirm', e.target.value)}
-                      placeholder="Repeat password" className="pl-10" required
-                      autoComplete="new-password"
-                    />
+                    <Input type="password" value={reg.confirm} onChange={e => setRegField('confirm', e.target.value)}
+                      placeholder="Repeat password" className="pl-10" required autoComplete="new-password" />
                   </div>
                 </div>
 
                 <Button type="submit" className="w-full" disabled={regLoading || storesLoading}>
-                  {regLoading ? 'Creating account...' : 'Create Account'}
+                  {regLoading ? (
+                    <span className="flex items-center gap-2">
+                      <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      {regStep || 'Creating account...'}
+                    </span>
+                  ) : 'Create Account'}
                 </Button>
 
-                <button
-                  type="button"
-                  onClick={() => { setView('login'); setRegError(''); }}
-                  className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-1"
-                >
+                <button type="button" onClick={() => { setView('login'); setRegError(''); }}
+                  className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-1">
                   Already have an account? Sign in
                 </button>
               </form>
