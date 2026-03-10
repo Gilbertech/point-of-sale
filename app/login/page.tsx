@@ -1,7 +1,7 @@
 'use client';
 // app/login/page.tsx
-// ✅ FIXED: Branch selector now falls back to ALL stores if is_active filter returns empty
-// ✅ Customer registration includes branch/store selector
+// ✅ No email confirmation required — customers are signed in immediately after registration
+// ✅ Branch selector falls back to ALL stores if is_active filter returns empty
 // ✅ store_id saved to both customers and app_users tables
 
 import { useState, useEffect } from 'react';
@@ -47,7 +47,6 @@ export default function LoginPage() {
   const [storesError, setStoresError]     = useState('');
   const [regLoading, setRegLoading]       = useState(false);
   const [regError, setRegError]           = useState('');
-  const [regSuccess, setRegSuccess]       = useState(false);
 
   const setRegField = (k: keyof typeof reg, v: string) =>
     setReg(prev => ({ ...prev, [k]: v }));
@@ -57,18 +56,7 @@ export default function LoginPage() {
     if (!loading && isAuthenticated) router.push('/dashboard');
   }, [loading, isAuthenticated, router]);
 
-  // ── ✅ FIXED: Robust store fetching with two-attempt fallback ─────────────
-  //
-  // Root cause of "No branches available":
-  //   - Attempt 1: .eq('is_active', true) returns 0 rows when:
-  //       a) The column doesn't exist yet in your stores table
-  //       b) All stores have is_active = null or false
-  //       c) RLS policy blocks anon reads with that filter
-  //   - Attempt 2: Remove filter entirely — fetch ALL stores
-  //   - If both fail: RLS is blocking anon SELECT on stores table entirely
-  //     → Fix in Supabase Dashboard: Authentication → Policies → stores
-  //       Add policy: CREATE POLICY "anon can read stores" ON stores FOR SELECT USING (true);
-  //
+  // ── Robust store fetching with two-attempt fallback ──────────────────────
   useEffect(() => {
     if (view !== 'register') return;
 
@@ -105,19 +93,17 @@ export default function LoginPage() {
         if (!allError && allData && allData.length > 0) {
           setStores(allData);
         } else if (allError) {
-          // RLS is blocking reads — need to add public policy in Supabase
           console.error('[Stores] Unfiltered query also failed:', allError.message);
           setStoresError(
-            'Could not load branches — RLS policy may be blocking public reads. ' +
-            'In Supabase → Authentication → Policies → stores, add: ' +
+            'Could not load branches. In Supabase → Authentication → Policies → stores, add: ' +
             'CREATE POLICY "anon read stores" ON stores FOR SELECT USING (true);'
           );
         } else {
-          setStoresError('No branches found in database. Please ask your administrator to add store branches.');
+          setStoresError('No branches found. Please ask your administrator to add store branches.');
         }
       } catch (e) {
         console.error('[Stores] Exception:', e);
-        setStoresError('Failed to load branches. Please refresh the page and try again.');
+        setStoresError('Failed to load branches. Please refresh and try again.');
       } finally {
         setStoresLoading(false);
       }
@@ -145,6 +131,14 @@ export default function LoginPage() {
   };
 
   // ── Register handler ─────────────────────────────────────────────────────
+  // NO email verification — customer is signed in immediately after signup.
+  //
+  // To disable Supabase's email confirmation globally:
+  //   Supabase Dashboard → Authentication → Email → Disable "Confirm email"
+  //
+  // This code also calls supabase.auth.signInWithPassword() right after signUp
+  // so the session is established instantly regardless of the Supabase setting.
+  //
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -174,11 +168,12 @@ export default function LoginPage() {
         return;
       }
 
-      // Create Supabase Auth account
+      // Step 1: Create Supabase Auth account (no email confirmation)
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email:    reg.email,
         password: reg.password,
         options: {
+          // emailRedirectTo is intentionally omitted — we don't want confirmation emails
           data: {
             first_name: reg.firstName,
             last_name:  reg.lastName,
@@ -188,33 +183,42 @@ export default function LoginPage() {
         },
       });
 
-      if (authError || !authData.user) {
-        setRegError(authError?.message ?? 'Registration failed.');
+      if (authError) {
+        setRegError(authError.message);
         setRegLoading(false);
         return;
       }
 
-      // Update app_users row with store_id
+      if (!authData.user) {
+        setRegError('Registration failed. Please try again.');
+        setRegLoading(false);
+        return;
+      }
+
+      const userId = authData.user.id;
+
+      // Step 2: Upsert app_users row with full profile + store_id
       const { error: updateError } = await supabase
         .from('app_users')
-        .update({
+        .upsert({
+          id:         userId,
+          email:      reg.email,
           first_name: reg.firstName,
           last_name:  reg.lastName,
           role:       'customer',
           is_active:  true,
           store_id:   reg.storeId,
-        })
-        .eq('id', authData.user.id);
+        }, { onConflict: 'id' });
 
       if (updateError) {
-        console.error('[Register] app_users update failed:', updateError.message);
+        console.error('[Register] app_users upsert failed:', updateError.message);
       }
 
-      // Create customers record
+      // Step 3: Create customers record
       const { error: customerError } = await supabase
         .from('customers')
         .upsert([{
-          id:             authData.user.id,
+          id:             userId,
           first_name:     reg.firstName,
           last_name:      reg.lastName,
           email:          reg.email,
@@ -222,21 +226,42 @@ export default function LoginPage() {
           store_id:       reg.storeId,
           loyalty_points: 0,
           total_spent:    0,
-        }]);
+        }], { onConflict: 'id' });
 
       if (customerError) {
         console.error('[Register] customers upsert failed:', customerError.message);
       }
 
-      setRegSuccess(true);
+      // Step 4: Sign in immediately — bypasses email confirmation entirely.
+      // Even if Supabase sends a confirmation email, the user is already logged in.
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        email:    reg.email,
+        password: reg.password,
+      });
+
+      if (signInError || !signInData.session) {
+        // Sign-in failed — most likely Supabase "Confirm email" is ON and the
+        // account is unconfirmed. Redirect to login with a helpful message.
+        console.warn('[Register] Auto sign-in failed:', signInError?.message);
+        // Fall back to login view with pre-filled email
+        setView('login');
+        setEmail(reg.email);
+        setError(
+          'Account created! Please check your email to confirm your account, then sign in. ' +
+          '(To skip this: Supabase Dashboard → Auth → Email → disable "Confirm email")'
+        );
+        return;
+      }
+
+      // Step 5: Redirect to customer dashboard
+      router.push('/dashboard/query');
+
     } catch (err) {
       setRegError(err instanceof Error ? err.message : 'Registration failed.');
     } finally {
       setRegLoading(false);
     }
   };
-
-  const selectedStore = stores.find(s => s.id === reg.storeId);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 to-teal-100 p-4">
@@ -325,156 +350,153 @@ export default function LoginPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {regSuccess ? (
-                <div className="space-y-4 text-center py-4">
-                  <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center mx-auto">
-                    <svg className="w-7 h-7 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
+              <form onSubmit={handleRegister} className="space-y-4">
+                {regError && (
+                  <Alert variant="destructive">
+                    <AlertDescription>{regError}</AlertDescription>
+                  </Alert>
+                )}
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label>First Name *</Label>
+                    <Input
+                      value={reg.firstName}
+                      onChange={e => setRegField('firstName', e.target.value)}
+                      placeholder="Jane" required
+                    />
                   </div>
-                  <p className="font-semibold text-foreground text-lg">Account created!</p>
-                  {selectedStore && (
-                    <div className="inline-flex items-center gap-1.5 bg-primary/10 text-primary text-sm px-3 py-1.5 rounded-full">
-                      <MapPin className="w-3.5 h-3.5" />
-                      Registered at <span className="font-semibold ml-1">{selectedStore.name}</span>
-                    </div>
-                  )}
-                  <p className="text-sm text-muted-foreground">
-                    You can now sign in with your credentials.
-                  </p>
-                  <Button
-                    className="w-full"
-                    onClick={() => { setView('login'); setRegSuccess(false); setEmail(reg.email); }}
-                  >
-                    Go to Sign In
-                  </Button>
+                  <div className="space-y-1.5">
+                    <Label>Last Name *</Label>
+                    <Input
+                      value={reg.lastName}
+                      onChange={e => setRegField('lastName', e.target.value)}
+                      placeholder="Doe" required
+                    />
+                  </div>
                 </div>
-              ) : (
-                <form onSubmit={handleRegister} className="space-y-4">
-                  {regError && (
-                    <Alert variant="destructive">
-                      <AlertDescription>{regError}</AlertDescription>
-                    </Alert>
-                  )}
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <Label>First Name *</Label>
-                      <Input value={reg.firstName} onChange={e => setRegField('firstName', e.target.value)} placeholder="Jane" required />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label>Last Name *</Label>
-                      <Input value={reg.lastName} onChange={e => setRegField('lastName', e.target.value)} placeholder="Doe" required />
-                    </div>
+                <div className="space-y-1.5">
+                  <Label>Email *</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      type="email" value={reg.email}
+                      onChange={e => setRegField('email', e.target.value)}
+                      placeholder="you@example.com" className="pl-10" required
+                    />
                   </div>
+                </div>
 
-                  <div className="space-y-1.5">
-                    <Label>Email *</Label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input type="email" value={reg.email} onChange={e => setRegField('email', e.target.value)} placeholder="you@example.com" className="pl-10" required />
+                <div className="space-y-1.5">
+                  <Label>Phone <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
+                  <Input
+                    type="tel" value={reg.phone}
+                    onChange={e => setRegField('phone', e.target.value)}
+                    placeholder="+254 7XX XXX XXX"
+                  />
+                </div>
+
+                {/* ── Branch selector ── */}
+                <div className="space-y-1.5">
+                  <Label className="flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
+                    Which branch do you shop at? *
+                  </Label>
+
+                  {storesLoading ? (
+                    <div className="flex items-center gap-2 px-3 py-2.5 border border-input rounded-md text-sm text-muted-foreground">
+                      <div className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                      Loading branches...
                     </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label>Phone <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
-                    <Input type="tel" value={reg.phone} onChange={e => setRegField('phone', e.target.value)} placeholder="+254 7XX XXX XXX" />
-                  </div>
-
-                  {/* ── Branch selector ── */}
-                  <div className="space-y-1.5">
-                    <Label className="flex items-center gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
-                      Which branch do you shop at? *
-                    </Label>
-
-                    {storesLoading ? (
-                      <div className="flex items-center gap-2 px-3 py-2.5 border border-input rounded-md text-sm text-muted-foreground">
-                        <div className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                        Loading branches...
-                      </div>
-
-                    ) : storesError ? (
-                      <div className="px-3 py-3 border border-destructive/30 bg-destructive/5 rounded-md space-y-1">
-                        <p className="text-sm text-destructive font-medium">⚠️ Could not load branches</p>
-                        <p className="text-xs text-muted-foreground leading-relaxed">{storesError}</p>
+                  ) : storesError ? (
+                    <div className="px-3 py-3 border border-destructive/30 bg-destructive/5 rounded-md space-y-1">
+                      <p className="text-sm text-destructive font-medium">⚠️ Could not load branches</p>
+                      <p className="text-xs text-muted-foreground leading-relaxed">{storesError}</p>
+                      <button
+                        type="button"
+                        onClick={() => { setView('login'); setTimeout(() => setView('register'), 50); }}
+                        className="text-xs text-primary font-semibold hover:underline mt-1"
+                      >
+                        ↻ Try again
+                      </button>
+                    </div>
+                  ) : stores.length === 0 ? (
+                    <div className="px-3 py-2.5 border border-input rounded-md text-sm text-muted-foreground">
+                      No branches found — please contact staff.
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-52 overflow-y-auto pr-0.5">
+                      {stores.map(store => (
                         <button
+                          key={store.id}
                           type="button"
-                          onClick={() => { setView('login'); setTimeout(() => setView('register'), 50); }}
-                          className="text-xs text-primary font-semibold hover:underline mt-1"
+                          onClick={() => setRegField('storeId', store.id)}
+                          className={`w-full text-left px-4 py-3 rounded-lg border-2 transition-all ${
+                            reg.storeId === store.id
+                              ? 'border-primary bg-primary/5 text-foreground'
+                              : 'border-border hover:border-primary/40 hover:bg-muted/50 text-foreground'
+                          }`}
                         >
-                          ↻ Try again
-                        </button>
-                      </div>
-
-                    ) : stores.length === 0 ? (
-                      <div className="px-3 py-2.5 border border-input rounded-md text-sm text-muted-foreground">
-                        No branches found — please contact staff.
-                      </div>
-
-                    ) : (
-                      <div className="space-y-2 max-h-52 overflow-y-auto pr-0.5">
-                        {stores.map(store => (
-                          <button
-                            key={store.id}
-                            type="button"
-                            onClick={() => setRegField('storeId', store.id)}
-                            className={`w-full text-left px-4 py-3 rounded-lg border-2 transition-all ${
-                              reg.storeId === store.id
-                                ? 'border-primary bg-primary/5 text-foreground'
-                                : 'border-border hover:border-primary/40 hover:bg-muted/50 text-foreground'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="min-w-0">
-                                <p className="font-semibold text-sm">{store.name}</p>
-                                {store.address && (
-                                  <p className="text-xs text-muted-foreground mt-0.5">{store.address}</p>
-                                )}
-                              </div>
-                              {reg.storeId === store.id && (
-                                <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
-                                  <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                  </svg>
-                                </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="font-semibold text-sm">{store.name}</p>
+                              {store.address && (
+                                <p className="text-xs text-muted-foreground mt-0.5">{store.address}</p>
                               )}
                             </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label>Password *</Label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input type="password" value={reg.password} onChange={e => setRegField('password', e.target.value)} placeholder="Min 6 characters" className="pl-10" required autoComplete="new-password" />
+                            {reg.storeId === store.id && (
+                              <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
+                                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                </svg>
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                      ))}
                     </div>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Password *</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      type="password" value={reg.password}
+                      onChange={e => setRegField('password', e.target.value)}
+                      placeholder="Min 6 characters" className="pl-10" required
+                      autoComplete="new-password"
+                    />
                   </div>
+                </div>
 
-                  <div className="space-y-1.5">
-                    <Label>Confirm Password *</Label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input type="password" value={reg.confirm} onChange={e => setRegField('confirm', e.target.value)} placeholder="Repeat password" className="pl-10" required autoComplete="new-password" />
-                    </div>
+                <div className="space-y-1.5">
+                  <Label>Confirm Password *</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      type="password" value={reg.confirm}
+                      onChange={e => setRegField('confirm', e.target.value)}
+                      placeholder="Repeat password" className="pl-10" required
+                      autoComplete="new-password"
+                    />
                   </div>
+                </div>
 
-                  <Button type="submit" className="w-full" disabled={regLoading || storesLoading}>
-                    {regLoading ? 'Creating account...' : 'Create Account'}
-                  </Button>
+                <Button type="submit" className="w-full" disabled={regLoading || storesLoading}>
+                  {regLoading ? 'Creating account...' : 'Create Account'}
+                </Button>
 
-                  <button
-                    type="button"
-                    onClick={() => { setView('login'); setRegError(''); }}
-                    className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-1"
-                  >
-                    Already have an account? Sign in
-                  </button>
-                </form>
-              )}
+                <button
+                  type="button"
+                  onClick={() => { setView('login'); setRegError(''); }}
+                  className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-1"
+                >
+                  Already have an account? Sign in
+                </button>
+              </form>
             </CardContent>
           </Card>
         )}
