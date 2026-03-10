@@ -49,6 +49,29 @@ interface SupportTicket {
   attachments: string[]; createdAt: string;
 }
 
+// ─── FIXED: Robust attachment parser ────────────────────────────────────────
+// Supabase sometimes returns PostgreSQL text[] as a string: "{url1,url2}"
+// instead of a proper JS array. This handles all cases safely.
+
+function parseAttachments(raw: any): string[] {
+  if (!raw) return [];
+  // Already a proper JS array
+  if (Array.isArray(raw)) return raw.filter(Boolean);
+  // PostgreSQL array string format: "{url1,url2}" or "{}"
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (trimmed === '{}' || trimmed === '') return [];
+    // Strip curly braces
+    const inner = trimmed.replace(/^\{|\}$/g, '');
+    // Split on commas that are not inside double quotes
+    return inner
+      .split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/)
+      .map(s => s.replace(/^"|"$/g, '').trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
 // ─── Status configs ─────────────────────────────────────────────────────────
 
 const COMPLAINT_STATUS: Record<string, { label: string; color: string; bg: string; icon?: React.ReactNode }> = {
@@ -262,13 +285,12 @@ function AttachmentGrid({ attachments }: { attachments: string[] }) {
 function TicketReplyPanel({ ticket: initial, user, onClose, onSaved }: {
   ticket: SupportTicket; user: any; onClose: () => void; onSaved: () => void;
 }) {
-  // Re-fetch fresh ticket data on open so attachments are always up to date
-  const [ticket, setTicket]   = useState<SupportTicket>(initial);
+  const [ticket, setTicket]     = useState<SupportTicket>(initial);
   const [fetching, setFetching] = useState(true);
-  const [reply, setReply]     = useState(initial.reply ?? '');
-  const [status, setStatus]   = useState(initial.status);
-  const [saving, setSaving]   = useState(false);
-  const [error, setError]     = useState('');
+  const [reply, setReply]       = useState(initial.reply ?? '');
+  const [status, setStatus]     = useState(initial.status);
+  const [saving, setSaving]     = useState(false);
+  const [error, setError]       = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -288,6 +310,8 @@ function TicketReplyPanel({ ticket: initial, user, onClose, onSaved }: {
 
         if (cancelled) return;
 
+        // FIXED: use parseAttachments to handle both JS arrays and
+        // PostgreSQL "{url1,url2}" string format reliably
         const fresh: SupportTicket = {
           id:            data.id,
           customerName:  data.customer_name ?? 'Unknown',
@@ -298,14 +322,12 @@ function TicketReplyPanel({ ticket: initial, user, onClose, onSaved }: {
           status:        data.status ?? 'open',
           reply:         data.reply ?? null,
           storeId:       data.store_id ?? null,
-          // Normalise: could be null, [], or a real array
-          attachments:   Array.isArray(data.attachments)
-                           ? data.attachments.filter(Boolean)
-                           : [],
+          attachments:   parseAttachments(data.attachments),
           createdAt:     data.created_at,
         };
 
-        console.log('[TicketPanel] attachments from DB:', fresh.attachments);
+        console.log('[TicketPanel] attachments from DB (raw):', data.attachments);
+        console.log('[TicketPanel] attachments parsed:', fresh.attachments);
         setTicket(fresh);
         setReply(fresh.reply ?? '');
         setStatus(fresh.status);
@@ -469,7 +491,7 @@ export default function CustomersPage() {
   const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
   const [ticketSearch, setTicketSearch]     = useState('');
 
-  // ── Load all data — no store_id filter at DB, filter in JS to catch null store_id ──
+  // ── Load all data ──
 
   const loadCustomers = useCallback(async () => {
     setLoadingCustomers(true);
@@ -520,7 +542,10 @@ export default function CustomersPage() {
         id: t.id, customerName: t.customer_name ?? 'Unknown', customerPhone: t.customer_phone ?? '',
         subject: t.subject ?? '', message: t.message ?? '', category: t.category ?? 'General',
         status: t.status ?? 'open', reply: t.reply ?? null,
-        storeId: t.store_id ?? null, attachments: t.attachments ?? [],
+        storeId: t.store_id ?? null,
+        // FIXED: use parseAttachments here too so the ticket list card
+        // shows the correct attachment count badge
+        attachments: parseAttachments(t.attachments),
         createdAt: t.created_at,
       })));
     } catch (e) { console.error(e); } finally { setLoadingTickets(false); }
@@ -533,9 +558,7 @@ export default function CustomersPage() {
 
   const handleRefreshAll = () => { loadCustomers(); loadComplaints(); loadInquiries(); loadTickets(); };
 
-  // ── SMART SYNC: build ghost entries for anyone who submitted a ticket but
-  //    isn't in the customers table yet. Shows them in the Customers tab with
-  //    a badge indicating their source. Clicking edit lets staff register them. ──
+  // ── SMART SYNC: ghost entries for ticket-only contacts ──
 
   const mergedCustomers = useMemo(() => {
     const realNames = new Set(customers.map(c => `${c.firstName} ${c.lastName}`.toLowerCase().trim()));
@@ -625,7 +648,6 @@ export default function CustomersPage() {
         await updateCustomerSimple(editingCustomer.id, formData);
         if (formData.email) await supabase.from('app_users').update({ store_id: currentStoreId }).eq('email', formData.email);
       } else {
-        // New customer OR registering a ghost ticket-submitter
         await createCustomerSimple({ ...formData, storeId: currentStoreId });
         if (formData.email) {
           await supabase.from('app_users').upsert({
