@@ -469,14 +469,14 @@ export default function SupportPage() {
         ))}
       </div>
 
-      {/* Contact info */}
+      {/* Contact info 
       <Card className="bg-primary/5 border-primary/20">
         <CardContent className="p-4 flex flex-wrap gap-6">
           <div className="flex items-center gap-2 text-sm"><Phone className="w-4 h-4 text-primary" /><span className="font-medium text-foreground">Support:</span><span className="text-muted-foreground">+254 800 000 100</span></div>
           <div className="flex items-center gap-2 text-sm"><Mail className="w-4 h-4 text-primary" /><span className="font-medium text-foreground">Email:</span><span className="text-muted-foreground">support@shop.co.ke</span></div>
           <div className="flex items-center gap-2 text-sm"><MessageSquare className="w-4 h-4 text-primary" /><span className="font-medium text-foreground">Hours:</span><span className="text-muted-foreground">Mon–Sat, 8AM–6PM</span></div>
         </CardContent>
-      </Card>
+      </Card>*/}
 
       {/* Filters */}
       <Card className="bg-card border-border">
