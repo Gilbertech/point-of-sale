@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Use the Admin API to confirm the user's email immediately
-    const { error } = await supabaseAdmin.auth.admin.updateUser(userId, {
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, {
       email_confirm: true,
     });
 
