@@ -171,23 +171,31 @@ export default function SplitPaymentsPage() {
     <div className="min-h-screen bg-background p-6 space-y-6">
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-primary via-accent to-secondary">
             Split Payments
           </h1>
           <p className="text-muted-foreground mt-2">Track multi-method payment transactions</p>
         </div>
-        <Button
-          onClick={load}
-          variant="outline"
-          size="sm"
-          className="gap-2 border-border text-foreground/75 hover:bg-muted"
-          disabled={loading}
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-3">
+        {currentStore && (
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-primary/10 border border-primary/30 rounded-full">
+            <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+            <span className="text-sm font-semibold text-primary">{currentStore.name}</span>
+          </div>
+        )}
+          <Button
+            onClick={load}
+            variant="outline"
+            size="sm"
+            className="gap-2 border-border text-foreground/75 hover:bg-muted"
+            disabled={loading}
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {/* Error banner */}

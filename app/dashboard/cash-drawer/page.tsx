@@ -236,7 +236,14 @@ export default function CashDrawerPage() {
           </h1>
           <p className="text-muted-foreground mt-2">Track and reconcile cash transactions</p>
         </div>
-        <Button onClick={load} variant="outline" size="sm"
+        <div className="flex items-center gap-3">
+        {currentStore && (
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-primary/10 border border-primary/30 rounded-full">
+            <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+            <span className="text-sm font-semibold text-primary">{currentStore.name}</span>
+          </div>
+        )}
+          <Button onClick={load} variant="outline" size="sm"
           className="gap-2 border-border text-foreground/75 hover:bg-muted" disabled={loading}>
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           Refresh

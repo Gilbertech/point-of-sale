@@ -35,9 +35,7 @@ const NAVIGATION_ITEMS = [
   { label: 'Sessions',         href: '/dashboard/sessions',           icon: MonitorCheck,          roles: ['super_admin','admin','manager'] },
   { label: 'Sync Monitor',     href: '/dashboard/offline-mode',       icon: Wifi,                  roles: ['super_admin','admin','manager'] },
 
-  // ── Support & Comms ───────────────────────────────────────────────────────
-  { label: 'Support',          href: '/dashboard/support',            icon: Headphones,            roles: ['super_admin','admin','manager'] },
-
+  
   // ── Self-service ──────────────────────────────────────────────────────────
   { label: 'Queries',          href: '/dashboard/query',              icon: MessageCircleQuestion, roles: ['cashier','inventory_staff'] },
   { label: 'My Workspace',     href: '/dashboard/worker-portal',      icon: LayoutGrid,            roles: ['cashier','inventory_staff','manager'] },
