@@ -469,5 +469,6 @@ export default function CashDrawerPage() {
         </CardContent>
       </Card>
     </div>
+    </div>
   );
 }
