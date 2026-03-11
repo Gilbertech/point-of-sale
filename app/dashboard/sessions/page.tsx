@@ -255,7 +255,9 @@ export default function SessionsPage() {
         <Card className="bg-card border-border">
           <CardHeader>
             <CardTitle className="text-foreground">Active Sessions</CardTitle>
-            <CardDescription className="text-muted-foreground">Currently logged in users</CardDescription>
+            <CardDescription className="text-muted-foreground">
+              Currently logged in users — only admins can force-end sessions
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
@@ -268,15 +270,20 @@ export default function SessionsPage() {
                       Logged in: {new Date(s.loginAt).toLocaleTimeString()} · Activities: {s.activityCount}
                     </p>
                   </div>
-                  <Button
-                    size="sm"
-                    onClick={() => handleEndSession(s.id)}
-                    disabled={endingId === s.id}
-                    className="gap-2 bg-destructive hover:bg-destructive/90"
-                  >
-                    <LogOut className="w-4 h-4" />
-                    {endingId === s.id ? 'Ending...' : 'End Session'}
-                  </Button>
+                  {/* Only super_admin / admin can force-end sessions, and never their own */}
+                  {['super_admin', 'admin'].includes(user?.role ?? '') && s.userId !== user?.id ? (
+                    <Button
+                      size="sm"
+                      onClick={() => handleEndSession(s.id)}
+                      disabled={endingId === s.id}
+                      className="gap-2 bg-destructive hover:bg-destructive/90 text-white"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      {endingId === s.id ? 'Ending...' : 'Force End'}
+                    </Button>
+                  ) : (
+                    <Badge className="bg-green-500 text-white">Your session</Badge>
+                  )}
                 </div>
               ))}
             </div>
