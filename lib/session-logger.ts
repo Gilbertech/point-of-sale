@@ -1,138 +1,127 @@
-// Session and Activity Logging System
-import { AuditLog } from './types';
+// auth-context-session-patch.ts
+// ─────────────────────────────────────────────────────────────────────────────
+// Paste the two helper functions below into your existing auth-context.tsx.
+// Then call startSession() right after a successful login,
+// and call endSession() right before signing out.
+//
+// This is what makes the Sessions page show real data.
+// ─────────────────────────────────────────────────────────────────────────────
 
-interface SessionLog {
-  sessionId: string;
-  userId: string;
-  loginTime: Date;
-  logoutTime?: Date;
-  duration?: number; // in minutes
-  storeId: string;
-  ipAddress?: string;
-  status: 'active' | 'expired' | 'manual_logout';
-  activityCount: number;
-  lastActivityTime: Date;
-}
+import { supabase } from '@/lib/supabase/client';
 
-interface ActivityLog {
-  id: string;
-  sessionId: string;
-  userId: string;
-  action: string;
-  timestamp: Date;
-  details?: Record<string, any>;
-}
+// ── Stored in module scope (survives re-renders) ──────────────────────────────
+let _currentSessionRowId: string | null = null;
 
-const SESSION_LOGS_KEY = 'pos_session_logs';
-const ACTIVITY_LOGS_KEY = 'pos_activity_logs';
+// ── Call this right after login succeeds ─────────────────────────────────────
 
-export class SessionLogger {
-  static createSessionLog(sessionId: string, userId: string, storeId: string): SessionLog {
-    const log: SessionLog = {
-      sessionId,
-      userId,
-      loginTime: new Date(),
-      storeId,
-      status: 'active',
-      activityCount: 0,
-      lastActivityTime: new Date(),
-    };
-    
-    this.saveSessionLog(log);
-    return log;
-  }
+export async function startSession(userId: string, storeId: string | null) {
+  try {
+    const { data, error } = await supabase
+      .from('user_sessions')
+      .insert([{
+        user_id:  userId,
+        store_id: storeId ?? null,
+        status:   'active',
+      }])
+      .select('id')
+      .single();
 
-  static endSessionLog(sessionId: string, status: 'expired' | 'manual_logout' = 'manual_logout'): SessionLog | null {
-    const logs = this.getAllSessionLogs();
-    const sessionLog = logs.find(log => log.sessionId === sessionId);
-    
-    if (!sessionLog) return null;
-
-    sessionLog.logoutTime = new Date();
-    sessionLog.status = status;
-    sessionLog.duration = Math.round(
-      (sessionLog.logoutTime.getTime() - sessionLog.loginTime.getTime()) / 60000
-    );
-
-    const updatedLogs = logs.map(log => log.sessionId === sessionId ? sessionLog : log);
-    localStorage.setItem(SESSION_LOGS_KEY, JSON.stringify(updatedLogs));
-
-    return sessionLog;
-  }
-
-  static logActivity(sessionId: string, userId: string, action: string, details?: Record<string, any>): ActivityLog {
-    const activity: ActivityLog = {
-      id: `activity_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      sessionId,
-      userId,
-      action,
-      timestamp: new Date(),
-      details,
-    };
-
-    const activities = this.getAllActivityLogs();
-    activities.push(activity);
-    localStorage.setItem(ACTIVITY_LOGS_KEY, JSON.stringify(activities));
-
-    // Update activity count in session log
-    const logs = this.getAllSessionLogs();
-    const sessionLog = logs.find(log => log.sessionId === sessionId);
-    if (sessionLog) {
-      sessionLog.activityCount++;
-      sessionLog.lastActivityTime = new Date();
-      const updatedLogs = logs.map(log => log.sessionId === sessionId ? sessionLog : log);
-      localStorage.setItem(SESSION_LOGS_KEY, JSON.stringify(updatedLogs));
+    if (error) {
+      console.warn('[Session] Could not start session row:', error.message);
+      return;
     }
 
-    return activity;
-  }
-
-  static getSessionLog(sessionId: string): SessionLog | undefined {
-    const logs = this.getAllSessionLogs();
-    return logs.find(log => log.sessionId === sessionId);
-  }
-
-  static getAllSessionLogs(): SessionLog[] {
-    const stored = localStorage.getItem(SESSION_LOGS_KEY);
-    return stored ? JSON.parse(stored) : [];
-  }
-
-  static getSessionActivities(sessionId: string): ActivityLog[] {
-    const logs = this.getAllActivityLogs();
-    return logs.filter(log => log.sessionId === sessionId);
-  }
-
-  static getAllActivityLogs(): ActivityLog[] {
-    const stored = localStorage.getItem(ACTIVITY_LOGS_KEY);
-    return stored ? JSON.parse(stored) : [];
-  }
-
-  static getSessionsByUser(userId: string): SessionLog[] {
-    const logs = this.getAllSessionLogs();
-    return logs.filter(log => log.userId === userId);
-  }
-
-  static getActiveSessions(): SessionLog[] {
-    const logs = this.getAllSessionLogs();
-    return logs.filter(log => log.status === 'active');
-  }
-
-  static clearOldLogs(daysToKeep: number = 30): void {
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
-
-    const sessions = this.getAllSessionLogs().filter(log => new Date(log.loginTime) > cutoffDate);
-    const activities = this.getAllActivityLogs().filter(log => new Date(log.timestamp) > cutoffDate);
-
-    localStorage.setItem(SESSION_LOGS_KEY, JSON.stringify(sessions));
-    localStorage.setItem(ACTIVITY_LOGS_KEY, JSON.stringify(activities));
-  }
-
-  static exportSessionReport(startDate: Date, endDate: Date): SessionLog[] {
-    const logs = this.getAllSessionLogs();
-    return logs.filter(log => {
-      const logDate = new Date(log.loginTime);
-      return logDate >= startDate && logDate <= endDate;
-    });
+    _currentSessionRowId = data.id;
+    // Persist across page refreshes
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('pos_session_row_id', data.id);
+    }
+  } catch (e) {
+    console.warn('[Session] startSession exception:', e);
   }
 }
+
+// ── Call this right before supabase.auth.signOut() ───────────────────────────
+
+export async function endSession(reason = 'manual_logout') {
+  // Recover id from sessionStorage if module reloaded
+  if (!_currentSessionRowId && typeof window !== 'undefined') {
+    _currentSessionRowId = sessionStorage.getItem('pos_session_row_id');
+  }
+
+  if (!_currentSessionRowId) return;
+
+  try {
+    // Calculate duration from the stored login_at
+    const { data: row } = await supabase
+      .from('user_sessions')
+      .select('login_at')
+      .eq('id', _currentSessionRowId)
+      .single();
+
+    const loginTime    = row?.login_at ? new Date(row.login_at).getTime() : Date.now();
+    const durationMins = Math.max(0, Math.round((Date.now() - loginTime) / 60000));
+
+    await supabase
+      .from('user_sessions')
+      .update({
+        status:           'ended',
+        logout_at:        new Date().toISOString(),
+        duration_minutes: durationMins,
+        logout_reason:    reason,
+      })
+      .eq('id', _currentSessionRowId);
+
+  } catch (e) {
+    console.warn('[Session] endSession exception:', e);
+  } finally {
+    _currentSessionRowId = null;
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('pos_session_row_id');
+    }
+  }
+}
+
+// ── Increment activity counter (optional, call on each meaningful action) ────
+
+export async function incrementActivity() {
+  if (!_currentSessionRowId && typeof window !== 'undefined') {
+    _currentSessionRowId = sessionStorage.getItem('pos_session_row_id');
+  }
+  if (!_currentSessionRowId) return;
+
+  try {
+    await supabase.rpc('increment_session_activity', {
+      session_id: _currentSessionRowId,
+    });
+  } catch {
+    // non-critical — ignore
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SQL for the incrementActivity RPC (run in Supabase SQL Editor once):
+//
+// CREATE OR REPLACE FUNCTION increment_session_activity(session_id uuid)
+// RETURNS void LANGUAGE sql SECURITY DEFINER AS $$
+//   UPDATE user_sessions
+//   SET activity_count = activity_count + 1
+//   WHERE id = session_id;
+// $$;
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HOW TO WIRE INTO auth-context.tsx
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// 1. Import at the top of auth-context.tsx:
+//    import { startSession, endSession } from './auth-context-session-patch';
+//
+// 2. In your login() function, after successfully getting the user profile:
+//    await startSession(user.id, user.store_id ?? null);
+//
+// 3. In your logout() function, before calling supabase.auth.signOut():
+//    await endSession('manual_logout');
+//
+// That's it. The Sessions page will start showing real data immediately.
+// ─────────────────────────────────────────────────────────────────────────────
