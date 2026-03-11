@@ -28,19 +28,7 @@ const NAVIGATION_ITEMS = [
   { label: 'Suppliers',        href: '/dashboard/supplier',           icon: Truck,                 roles: ['super_admin','admin','manager'] },
 
   // ── Finance & Payments ────────────────────────────────────────────────────
-  { label: 'Split Payments',   href: '/dashboard/split-payments',     icon: SplitSquareVertical,   roles: ['super_admin','admin','manager','cashier'] },
-  { label: 'Cash Drawer',      href: '/dashboard/cash-drawer',        icon: Wallet,                roles: ['super_admin','admin','manager','cashier'] },
-  { label: 'Audit Logs',       href: '/dashboard/audit-logs',         icon: BookOpen,              roles: ['super_admin','admin','manager'] },
-
-  // ── Operations ────────────────────────────────────────────────────────────
-  { label: 'Sessions',         href: '/dashboard/sessions',           icon: MonitorCheck,          roles: ['super_admin','admin','manager'] },
-  { label: 'Sync Monitor',     href: '/dashboard/offline-mode',       icon: Wifi,                  roles: ['super_admin','admin','manager'] },
-
-  // ── Support & Comms ───────────────────────────────────────────────────────
-  { label: 'Support',          href: '/dashboard/support',            icon: Headphones,            roles: ['super_admin','admin','manager'] },
-
-  // ── Self-service ──────────────────────────────────────────────────────────
-  { label: 'Queries',          href: '/dashboard/query',              icon: MessageCircleQuestion, roles: ['cashier','inventory_staff'] },
+  
   { label: 'My Workspace',     href: '/dashboard/worker-portal',      icon: LayoutGrid,            roles: ['cashier','inventory_staff','manager'] },
 
   // ── Admin only ────────────────────────────────────────────────────────────
