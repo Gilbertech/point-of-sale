@@ -131,10 +131,9 @@ export default function CashDrawerPage() {
       const newDrawer: DrawerSession = {
         id:            data.id,
         cashierId:     data.cashier_id,
-        cashierName:   (() => {
-  const u = data.app_users as { first_name?: string; last_name?: string } | null;
-  return u ? `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() : data.cashier_id;
-})(),
+        cashierName:   data.app_users
+          ? `${data.app_users.first_name ?? ''} ${data.app_users.last_name ?? ''}`.trim()
+          : data.cashier_id,
         storeId:       data.store_id,
         openingAmount: data.opening_amount,
         closingAmount: null,
@@ -221,18 +220,18 @@ export default function CashDrawerPage() {
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6 space-y-6">
+    <div className="min-h-screen bg-background p-6 space-y-6">
 
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-400 via-cyan-400 to-blue-400">
+          <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-primary via-accent to-secondary">
             Cash Drawer Management
           </h1>
-          <p className="text-slate-400 mt-2">Track and reconcile cash transactions</p>
+          <p className="text-muted-foreground mt-2">Track and reconcile cash transactions</p>
         </div>
         <Button onClick={load} variant="outline" size="sm"
-          className="gap-2 border-slate-600 text-slate-300 hover:bg-slate-700" disabled={loading}>
+          className="gap-2 border-border text-foreground/75 hover:bg-muted" disabled={loading}>
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
@@ -240,72 +239,72 @@ export default function CashDrawerPage() {
 
       {/* Alerts */}
       {error && (
-        <div className="p-3 rounded-lg bg-red-900/40 border border-red-700 text-red-300 text-sm">
+        <div className="p-3 rounded-lg bg-red-50 border border-red-300 text-red-600 text-sm">
           ⚠ {error} — Run <code className="font-mono text-xs">cash-drawer-offline-setup.sql</code> if the table doesn't exist yet.
         </div>
       )}
       {success && (
-        <Alert className="bg-green-900/30 border-green-700">
-          <AlertDescription className="text-green-300">{success}</AlertDescription>
+        <Alert className="bg-green-50 border-green-300">
+          <AlertDescription className="text-green-700">{success}</AlertDescription>
         </Alert>
       )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="bg-gradient-to-br from-green-950 to-green-900 border-green-800">
+        <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-slate-200">Active Drawers</CardTitle>
-            <DollarSign className="h-5 w-5 text-green-400" />
+            <CardTitle className="text-sm font-medium text-foreground/90">Active Drawers</CardTitle>
+            <DollarSign className="h-5 w-5 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-300">{stats.active}</div>
-            <p className="text-xs text-green-400 mt-1">Open now</p>
+            <div className="text-2xl font-bold text-green-700">{stats.active}</div>
+            <p className="text-xs text-green-600 mt-1">Open now</p>
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-cyan-950 to-cyan-900 border-cyan-800">
+        <Card className="bg-gradient-to-br from-cyan-50 to-sky-50 border-cyan-200">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-slate-200">Today's Sessions</CardTitle>
-            <DollarSign className="h-5 w-5 text-cyan-400" />
+            <CardTitle className="text-sm font-medium text-foreground/90">Today's Sessions</CardTitle>
+            <DollarSign className="h-5 w-5 text-cyan-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-cyan-300">{stats.today}</div>
-            <p className="text-xs text-cyan-400 mt-1">{stats.closed} closed</p>
+            <div className="text-2xl font-bold text-cyan-700">{stats.today}</div>
+            <p className="text-xs text-cyan-600 mt-1">{stats.closed} closed</p>
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-blue-950 to-blue-900 border-blue-800">
+        <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-slate-200">Total Variance</CardTitle>
-            <AlertCircle className="h-5 w-5 text-blue-400" />
+            <CardTitle className="text-sm font-medium text-foreground/90">Total Variance</CardTitle>
+            <AlertCircle className="h-5 w-5 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${stats.totalVar >= 0 ? 'text-blue-300' : 'text-red-300'}`}>
+            <div className={`text-2xl font-bold ${stats.totalVar >= 0 ? 'text-blue-700' : 'text-red-600'}`}>
               {formatCurrency(stats.totalVar)}
             </div>
-            <p className="text-xs text-blue-400 mt-1">Avg: {formatCurrency(stats.avgVar)}</p>
+            <p className="text-xs text-blue-600 mt-1">Avg: {formatCurrency(stats.avgVar)}</p>
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-violet-950 to-violet-900 border-violet-800">
+        <Card className="bg-gradient-to-br from-violet-50 to-purple-50 border-violet-200">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-slate-200">Your Status</CardTitle>
-            <CheckCircle className="h-5 w-5 text-violet-400" />
+            <CardTitle className="text-sm font-medium text-foreground/90">Your Status</CardTitle>
+            <CheckCircle className="h-5 w-5 text-violet-600" />
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${activeDrawer ? 'text-green-300' : 'text-slate-400'}`}>
+            <div className={`text-2xl font-bold ${activeDrawer ? 'text-green-700' : 'text-muted-foreground'}`}>
               {activeDrawer ? 'OPEN' : 'CLOSED'}
             </div>
-            <p className="text-xs text-violet-400 mt-1">Your drawer</p>
+            <p className="text-xs text-violet-600 mt-1">Your drawer</p>
           </CardContent>
         </Card>
       </div>
 
       {/* Active drawer banner */}
       {activeDrawer && (
-        <Alert className="bg-amber-950 border-amber-800">
-          <AlertCircle className="h-4 w-4 text-amber-400" />
-          <AlertDescription className="text-amber-200">
+        <Alert className="bg-amber-50 border-amber-300">
+          <AlertCircle className="h-4 w-4 text-amber-600" />
+          <AlertDescription className="text-amber-800">
             Active drawer opened at {new Date(activeDrawer.openedAt).toLocaleTimeString()} with float of {formatCurrency(activeDrawer.openingAmount)}.
           </AlertDescription>
         </Alert>
@@ -315,12 +314,12 @@ export default function CashDrawerPage() {
       <div className="flex gap-4">
         {!activeDrawer ? (
           <Button onClick={() => setShowOpenForm(true)}
-            className="gap-2 bg-green-600 hover:bg-green-700 text-white">
+            className="gap-2 bg-green-500 hover:bg-green-700 text-foreground">
             <Plus className="w-4 h-4" /> Open Cash Drawer
           </Button>
         ) : (
           <Button onClick={() => setShowCloseForm(true)}
-            className="gap-2 bg-red-600 hover:bg-red-700 text-white">
+            className="gap-2 bg-destructive hover:bg-destructive/90 text-foreground">
             <X className="w-4 h-4" /> Close & Reconcile
           </Button>
         )}
@@ -328,21 +327,21 @@ export default function CashDrawerPage() {
 
       {/* Open form */}
       {showOpenForm && (
-        <Card className="bg-slate-800 border-slate-700">
+        <Card className="bg-card border-border">
           <CardHeader>
-            <CardTitle className="text-white">Open Cash Drawer</CardTitle>
+            <CardTitle className="text-foreground">Open Cash Drawer</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <label className="text-sm font-semibold text-slate-200">Opening Float</label>
+              <label className="text-sm font-semibold text-foreground/90">Opening Float</label>
               <Input type="number" value={openingAmount}
                 onChange={e => setOpeningAmount(e.target.value)}
                 placeholder="Enter opening amount"
-                className="mt-1 bg-slate-700 border-slate-600 text-white" />
+                className="mt-1 bg-muted border-border text-foreground" />
             </div>
             <div className="flex gap-2">
               <Button onClick={handleOpen} disabled={saving || !openingAmount}
-                className="flex-1 bg-green-600 hover:bg-green-700">
+                className="flex-1 bg-green-500 hover:bg-green-700">
                 {saving ? 'Opening...' : 'Open Drawer'}
               </Button>
               <Button onClick={() => { setShowOpenForm(false); setOpeningAmount(''); }}
@@ -354,36 +353,36 @@ export default function CashDrawerPage() {
 
       {/* Close form */}
       {showCloseForm && activeDrawer && (
-        <Card className="bg-slate-800 border-slate-700">
+        <Card className="bg-card border-border">
           <CardHeader>
-            <CardTitle className="text-white">Close & Reconcile Drawer</CardTitle>
+            <CardTitle className="text-foreground">Close & Reconcile Drawer</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="p-3 bg-slate-700 rounded-lg space-y-1">
-              <p className="text-sm text-slate-300">
-                Opening Float: <span className="font-bold text-green-400">{formatCurrency(activeDrawer.openingAmount)}</span>
+            <div className="p-3 bg-muted rounded-lg space-y-1">
+              <p className="text-sm text-foreground/75">
+                Opening Float: <span className="font-bold text-green-600">{formatCurrency(activeDrawer.openingAmount)}</span>
               </p>
-              <p className="text-sm text-slate-300">
-                Opened at: <span className="text-slate-200">{new Date(activeDrawer.openedAt).toLocaleTimeString()}</span>
+              <p className="text-sm text-foreground/75">
+                Opened at: <span className="text-foreground/90">{new Date(activeDrawer.openedAt).toLocaleTimeString()}</span>
               </p>
             </div>
 
             <div>
-              <label className="text-sm font-semibold text-slate-200">Actual Cash Count</label>
+              <label className="text-sm font-semibold text-foreground/90">Actual Cash Count</label>
               <Input type="number" value={closingAmount}
                 onChange={e => setClosingAmount(e.target.value)}
                 placeholder="Count the physical cash and enter here"
-                className="mt-1 bg-slate-700 border-slate-600 text-white" />
+                className="mt-1 bg-muted border-border text-foreground" />
             </div>
 
             {variance !== null && (
-              <div className={`p-3 rounded-lg ${variance >= 0 ? 'bg-green-900/40 border border-green-700' : 'bg-red-900/40 border border-red-700'}`}>
+              <div className={`p-3 rounded-lg ${variance >= 0 ? 'bg-green-50 border border-green-300' : 'bg-red-50 border border-red-300'}`}>
                 <p className="text-sm font-semibold">
                   Variance:{' '}
-                  <span className={variance >= 0 ? 'text-green-300' : 'text-red-300'}>
+                  <span className={variance >= 0 ? 'text-green-700' : 'text-red-600'}>
                     {variance >= 0 ? '+' : ''}{formatCurrency(variance)}
                   </span>
-                  <span className="text-slate-400 text-xs ml-2">
+                  <span className="text-muted-foreground text-xs ml-2">
                     {variance > 0 ? '(surplus)' : variance < 0 ? '(shortage)' : '(exact match ✓)'}
                   </span>
                 </p>
@@ -391,16 +390,16 @@ export default function CashDrawerPage() {
             )}
 
             <div>
-              <label className="text-sm font-semibold text-slate-200">Notes (Optional)</label>
+              <label className="text-sm font-semibold text-foreground/90">Notes (Optional)</label>
               <textarea value={notes} onChange={e => setNotes(e.target.value)}
                 placeholder="Any discrepancies or notes..."
-                className="mt-1 w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+                className="mt-1 w-full px-3 py-2 bg-muted border border-border rounded-md text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 rows={3} />
             </div>
 
             <div className="flex gap-2">
               <Button onClick={handleClose} disabled={saving || !closingAmount}
-                className="flex-1 bg-violet-600 hover:bg-violet-700">
+                className="flex-1 bg-secondary hover:bg-secondary/90">
                 {saving ? 'Saving...' : 'Reconcile & Close'}
               </Button>
               <Button onClick={() => { setShowCloseForm(false); setClosingAmount(''); setNotes(''); }}
@@ -411,42 +410,42 @@ export default function CashDrawerPage() {
       )}
 
       {/* Session history */}
-      <Card className="bg-slate-800 border-slate-700">
+      <Card className="bg-card border-border">
         <CardHeader>
-          <CardTitle className="text-white">Recent Sessions</CardTitle>
-          <CardDescription className="text-slate-400">Last 20 cash drawer sessions for this store</CardDescription>
+          <CardTitle className="text-foreground">Recent Sessions</CardTitle>
+          <CardDescription className="text-muted-foreground">Last 20 cash drawer sessions for this store</CardDescription>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="text-center py-8 text-slate-400 flex items-center justify-center gap-2">
+            <div className="text-center py-8 text-muted-foreground flex items-center justify-center gap-2">
               <RefreshCw className="w-4 h-4 animate-spin" /> Loading...
             </div>
           ) : drawers.length === 0 ? (
-            <div className="text-center py-8 text-slate-400">No drawer sessions yet.</div>
+            <div className="text-center py-8 text-muted-foreground">No drawer sessions yet.</div>
           ) : (
             <div className="space-y-2">
               {drawers.slice(0, 20).map(drawer => (
                 <div key={drawer.id}
-                  className="flex items-center justify-between p-3 bg-slate-700 rounded-lg border border-slate-600">
+                  className="flex items-center justify-between p-3 bg-muted rounded-lg border border-border">
                   <div>
-                    <p className="font-semibold text-slate-100">
+                    <p className="font-semibold text-foreground">
                       {formatCurrency(drawer.openingAmount)}
                       {drawer.closingAmount != null ? ` → ${formatCurrency(drawer.closingAmount)}` : ' → ...'}
                     </p>
-                    <p className="text-xs text-slate-400">
+                    <p className="text-xs text-muted-foreground">
                       {drawer.cashierName} · {new Date(drawer.openedAt).toLocaleString()}
                     </p>
                     {drawer.notes && (
-                      <p className="text-xs text-slate-500 mt-0.5 italic">{drawer.notes}</p>
+                      <p className="text-xs text-muted-foreground/70 mt-0.5 italic">{drawer.notes}</p>
                     )}
                   </div>
                   <div className="flex items-center gap-3">
                     {drawer.variance != null && (
-                      <span className={`text-sm font-bold ${drawer.variance >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      <span className={`text-sm font-bold ${drawer.variance >= 0 ? 'text-green-600' : 'text-red-500'}`}>
                         {drawer.variance >= 0 ? '+' : ''}{formatCurrency(drawer.variance)}
                       </span>
                     )}
-                    <Badge className={drawer.status === 'open' ? 'bg-green-600' : 'bg-gray-600'}>
+                    <Badge className={drawer.status === 'open' ? 'bg-green-500' : 'bg-muted-foreground/40'}>
                       {drawer.status}
                     </Badge>
                   </div>

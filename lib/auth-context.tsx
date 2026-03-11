@@ -1,6 +1,8 @@
 'use client';
 // lib/auth-context.tsx
-// Uses Supabase Auth for login — auth.uid() now works correctly for RLS.
+// Uses Supabase Auth for login — auth.uid() works correctly for RLS.
+// Session tracking: writes to `user_sessions` table on login/logout.
+// Requires: split-payments-sessions-setup.sql to have been run in Supabase.
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { supabase } from './supabase/client';
@@ -46,6 +48,74 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// ─── Session row tracking (module-scoped, survives re-renders) ────────────────
+// Stores the Supabase `user_sessions` row id so logout can close it out.
+let _sessionRowId: string | null = null;
+
+async function startSessionRow(userId: string, storeId: string | null) {
+  try {
+    const { data, error } = await supabase
+      .from('user_sessions')
+      .insert([{
+        user_id:  userId,
+        store_id: storeId ?? null,
+        status:   'active',
+      }])
+      .select('id')
+      .single();
+
+    if (error) {
+      console.warn('[Session] Could not create session row:', error.message);
+      return;
+    }
+
+    _sessionRowId = data.id;
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('pos_session_row_id', data.id);
+    }
+  } catch (e) {
+    console.warn('[Session] startSessionRow exception:', e);
+  }
+}
+
+async function endSessionRow(reason = 'manual_logout') {
+  // Recover id if module was reloaded (e.g. hot reload / page refresh)
+  if (!_sessionRowId && typeof window !== 'undefined') {
+    _sessionRowId = sessionStorage.getItem('pos_session_row_id');
+  }
+  if (!_sessionRowId) return;
+
+  try {
+    const { data: row } = await supabase
+      .from('user_sessions')
+      .select('login_at')
+      .eq('id', _sessionRowId)
+      .single();
+
+    const loginTime    = row?.login_at ? new Date(row.login_at).getTime() : Date.now();
+    const durationMins = Math.max(0, Math.round((Date.now() - loginTime) / 60_000));
+
+    await supabase
+      .from('user_sessions')
+      .update({
+        status:           'ended',
+        logout_at:        new Date().toISOString(),
+        duration_minutes: durationMins,
+        logout_reason:    reason,
+      })
+      .eq('id', _sessionRowId);
+  } catch (e) {
+    console.warn('[Session] endSessionRow exception:', e);
+  } finally {
+    _sessionRowId = null;
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('pos_session_row_id');
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser]                         = useState<User | null>(null);
   const [loading, setLoading]                   = useState(true);
@@ -63,7 +133,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logoutRef = useRef<(() => void) | undefined>(undefined);
 
   const logout = useCallback(async () => {
-    // Clear state immediately so UI reacts
+    // 1. Close the session row in Supabase BEFORE signing out
+    await endSessionRow('manual_logout');
+
+    // 2. Clear local state
     setUser(null);
     setSession(null);
     if (inactivityTimerRef.current) {
@@ -72,16 +145,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     if (typeof window !== 'undefined') {
       localStorage.removeItem('currentUser');
-      // Clear all Supabase session keys from localStorage
       Object.keys(localStorage).forEach(key => {
         if (key.startsWith('sb-') || key.includes('supabase')) {
           localStorage.removeItem(key);
         }
       });
     }
-    // MUST await — otherwise session survives the redirect and restores itself
+
+    // 3. Sign out of Supabase Auth
     await supabase.auth.signOut({ scope: 'local' });
-    // Replace (not href) so Back button can't return to dashboard
+
+    // 4. Redirect — replace so Back button can't return to dashboard
     window.location.replace('/login');
   }, []);
 
@@ -92,13 +166,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (user && session) {
       inactivityTimerRef.current = setTimeout(() => {
         setIsSessionExpired(true);
-        logoutRef.current?.();
+        endSessionRow('session_timeout').then(() => logoutRef.current?.());
       }, sessionTimeout * 60 * 1000);
       setSession(prev => prev ? { ...prev, lastActivityTime: new Date() } : null);
     }
   }, [user, session?.sessionId, sessionTimeout]);
 
-  // ── Build User object from app_users row ─────────────────────────────────
+  // ── Build User object from app_users row ──────────────────────────────────
   const buildUser = (data: any): User => ({
     id:        data.id,
     email:     data.email,
@@ -109,13 +183,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isActive:  data.is_active,
   });
 
-  // ── Login via Supabase Auth ──────────────────────────────────────────────
+  // ── Login via Supabase Auth ───────────────────────────────────────────────
   const login = useCallback(async (email: string, password: string): Promise<User> => {
     setLoading(true);
     try {
-      console.log('[Auth] Attempting Supabase Auth login for:', email);
+      console.log('[Auth] Attempting login for:', email);
 
-      // 1. Sign in via Supabase Auth — this sets the JWT session
+      // 1. Sign in via Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -125,9 +199,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error('Invalid email or password');
       }
 
-      console.log('[Auth] Supabase Auth success, uid:', authData.user.id);
+      console.log('[Auth] Auth success, uid:', authData.user.id);
 
-      // 2. Fetch full profile from app_users using the auth uid
+      // 2. Fetch full profile from app_users
       const { data: userData, error: userError } = await supabase
         .from('app_users')
         .select('id, email, first_name, last_name, role, store_id, is_active')
@@ -140,13 +214,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error('Account not found or inactive. Contact your administrator.');
       }
 
-      console.log('[Auth] User profile found:', userData.email, '| role:', userData.role);
+      console.log('[Auth] Profile found:', userData.email, '| role:', userData.role);
 
-      // 3. Update last_login timestamp
-      await supabase
+      // 3. Update last_login timestamp (non-blocking)
+      supabase
         .from('app_users')
         .update({ last_login: new Date().toISOString() })
-        .eq('id', userData.id);
+        .eq('id', userData.id)
+        .then(() => {});
 
       const loggedInUser = buildUser(userData);
 
@@ -168,11 +243,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           is_active:  loggedInUser.isActive,
         }));
 
-        // ── Auto-select the user's assigned branch ──────────────────────
-        // store-context reads 'selectedStoreId' from localStorage on mount.
-        // Workers/managers/cashiers with an assigned store_id will see their
-        // branch pre-selected in the sidebar immediately after login.
-        // super_admin / admin with null store_id keep whatever was selected.
+        // Auto-select the user's assigned branch
         if (loggedInUser.storeId) {
           localStorage.setItem('pos_selected_store', loggedInUser.storeId);
         }
@@ -181,6 +252,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(loggedInUser);
       setSession(sessionData);
       setIsSessionExpired(false);
+
+      // 4. ✅ Create a session row in user_sessions (powers the Sessions page)
+      await startSessionRow(loggedInUser.id, loggedInUser.storeId);
 
       return loggedInUser;
     } catch (error) {
@@ -200,7 +274,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return (hierarchy[user.role] ?? 0) >= (hierarchy[requiredRole] ?? 0);
   }, [user]);
 
-  // ── Restore session on mount via Supabase Auth session ──────────────────
+  // ── Restore session on mount ──────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
 
@@ -225,6 +299,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               lastActivityTime: new Date(),
               sessionId:        generateSessionId(),
             });
+            // Note: we do NOT call startSessionRow here — the existing open
+            // session row from login is still active (recovered via sessionStorage).
           }
         }
       } catch (err) {
@@ -236,13 +312,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     restoreSession();
 
-    // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, authSession) => {
+      async (event) => {
         if (event === 'SIGNED_OUT') {
           setUser(null);
           setSession(null);
-        } else if (event === 'TOKEN_REFRESHED' && authSession?.user) {
+        } else if (event === 'TOKEN_REFRESHED') {
           console.log('[Auth] Token refreshed silently');
         }
       }
@@ -254,7 +329,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [generateSessionId]);
 
-  // ── Activity listeners ───────────────────────────────────────────────────
+  // ── Activity listeners ────────────────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
     const handle = () => resetSessionTimeout();

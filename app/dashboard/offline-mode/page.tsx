@@ -164,42 +164,42 @@ export default function OfflineModePage() {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6 space-y-6">
+    <div className="min-h-screen bg-background p-6 space-y-6">
 
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-orange-400 to-red-400">
+          <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-accent via-primary to-destructive">
             Transaction Sync Monitor
           </h1>
-          <p className="text-slate-400 mt-2">View and resolve pending or failed transactions</p>
+          <p className="text-muted-foreground mt-2">View and resolve pending or failed transactions</p>
         </div>
         <Button onClick={load} variant="outline" size="sm"
-          className="gap-2 border-slate-600 text-slate-300 hover:bg-slate-700" disabled={loading}>
+          className="gap-2 border-border text-foreground/75 hover:bg-muted" disabled={loading}>
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
       </div>
 
       {/* Connection banner */}
-      <Alert className={isOnline ? 'bg-green-950 border-green-800' : 'bg-amber-950 border-amber-800'}>
+      <Alert className={isOnline ? 'bg-green-50 border-green-300' : 'bg-amber-50 border-amber-300'}>
         <div className="flex items-center gap-2">
           {isOnline
-            ? <><Wifi className="h-4 w-4 text-green-400" /><AlertDescription className="text-green-200">Connected to the internet. Supabase sync is active.</AlertDescription></>
-            : <><WifiOff className="h-4 w-4 text-amber-400" /><AlertDescription className="text-amber-200">You are offline. New transactions cannot be saved until the connection is restored.</AlertDescription></>
+            ? <><Wifi className="h-4 w-4 text-green-600" /><AlertDescription className="text-green-800">Connected to the internet. Supabase sync is active.</AlertDescription></>
+            : <><WifiOff className="h-4 w-4 text-amber-600" /><AlertDescription className="text-amber-800">You are offline. New transactions cannot be saved until the connection is restored.</AlertDescription></>
           }
         </div>
       </Alert>
 
       {/* Alerts */}
       {error && (
-        <div className="p-3 rounded-lg bg-red-900/40 border border-red-700 text-red-300 text-sm">
+        <div className="p-3 rounded-lg bg-red-50 border border-red-300 text-red-600 text-sm">
           ⚠ {error} — Run <code className="font-mono text-xs">cash-drawer-offline-setup.sql</code> if the table doesn't exist yet.
         </div>
       )}
       {success && (
-        <Alert className="bg-green-900/30 border-green-700">
-          <AlertDescription className="text-green-300">{success}</AlertDescription>
+        <Alert className="bg-green-50 border-green-300">
+          <AlertDescription className="text-green-700">{success}</AlertDescription>
         </Alert>
       )}
 
@@ -211,14 +211,14 @@ export default function OfflineModePage() {
           { label: 'Failed',   value: failed.length,  sub: 'Sync failed',         color: 'red',   Icon: XCircle      },
           { label: 'Total',    value: transactions.length, sub: 'All records',    color: 'cyan',  Icon: RefreshCw    },
         ].map(({ label, value, sub, color, Icon }) => (
-          <Card key={label} className={`bg-gradient-to-br from-${color}-950 to-${color}-900 border-${color}-800`}>
+          <Card key={label} className={`bg-gradient-to-br from-${color}-50 to-${color}-100 border-${color}-200`}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-slate-200">{label}</CardTitle>
-              <Icon className={`h-5 w-5 text-${color}-400`} />
+              <CardTitle className="text-sm font-medium text-foreground/90">{label}</CardTitle>
+              <Icon className={`h-5 w-5 text-${color}-600`} />
             </CardHeader>
             <CardContent>
-              <div className={`text-2xl font-bold text-${color}-300`}>{value}</div>
-              <p className={`text-xs text-${color}-400 mt-1`}>{sub}</p>
+              <div className={`text-2xl font-bold text-${color}-700`}>{value}</div>
+              <p className={`text-xs text-${color}-600 mt-1`}>{sub}</p>
             </CardContent>
           </Card>
         ))}
@@ -226,7 +226,7 @@ export default function OfflineModePage() {
 
       {/* Export */}
       <div className="flex gap-2">
-        <Button onClick={exportJSON} className="gap-2 bg-violet-600 hover:bg-violet-700">
+        <Button onClick={exportJSON} className="gap-2 bg-secondary hover:bg-secondary/90">
           <Download className="w-4 h-4" />
           Export All Data
         </Button>
@@ -234,21 +234,21 @@ export default function OfflineModePage() {
 
       {/* Pending */}
       {pending.length > 0 && (
-        <Card className="bg-slate-800 border-slate-700">
+        <Card className="bg-card border-border">
           <CardHeader>
-            <CardTitle className="text-white">Pending Transactions</CardTitle>
-            <CardDescription className="text-slate-400">{pending.length} waiting to sync</CardDescription>
+            <CardTitle className="text-foreground">Pending Transactions</CardTitle>
+            <CardDescription className="text-muted-foreground">{pending.length} waiting to sync</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2 max-h-80 overflow-y-auto">
               {pending.map(t => (
-                <div key={t.id} className="flex items-center justify-between p-3 bg-slate-700 rounded-lg border border-amber-700/40">
+                <div key={t.id} className="flex items-center justify-between p-3 bg-muted rounded-lg border border-amber-700/40">
                   <div>
-                    <p className="font-semibold text-slate-100">{t.transactionRef}</p>
-                    <p className="text-xs text-slate-400">{t.type} · {formatCurrency(t.amount)}</p>
-                    <p className="text-xs text-slate-400">{new Date(t.createdAt).toLocaleString()} · Attempts: {t.attempts}</p>
+                    <p className="font-semibold text-foreground">{t.transactionRef}</p>
+                    <p className="text-xs text-muted-foreground">{t.type} · {formatCurrency(t.amount)}</p>
+                    <p className="text-xs text-muted-foreground">{new Date(t.createdAt).toLocaleString()} · Attempts: {t.attempts}</p>
                   </div>
-                  <Badge className="bg-amber-600">Pending</Badge>
+                  <Badge className="bg-amber-500">Pending</Badge>
                 </div>
               ))}
             </div>
@@ -258,32 +258,32 @@ export default function OfflineModePage() {
 
       {/* Failed */}
       {failed.length > 0 && (
-        <Card className="bg-slate-800 border-slate-700">
+        <Card className="bg-card border-border">
           <CardHeader>
-            <CardTitle className="text-white">Failed Transactions</CardTitle>
-            <CardDescription className="text-slate-400">{failed.length} failed to sync — action required</CardDescription>
+            <CardTitle className="text-foreground">Failed Transactions</CardTitle>
+            <CardDescription className="text-muted-foreground">{failed.length} failed to sync — action required</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2 max-h-80 overflow-y-auto">
               {failed.map(t => (
-                <div key={t.id} className="flex items-center justify-between p-3 bg-slate-700 rounded-lg border border-red-700/50">
+                <div key={t.id} className="flex items-center justify-between p-3 bg-muted rounded-lg border border-red-300/50">
                   <div className="flex-1 mr-3">
-                    <p className="font-semibold text-slate-100">{t.transactionRef}</p>
-                    <p className="text-xs text-slate-400">{t.type} · {formatCurrency(t.amount)}</p>
-                    <p className="text-xs text-slate-400">{new Date(t.createdAt).toLocaleString()}</p>
+                    <p className="font-semibold text-foreground">{t.transactionRef}</p>
+                    <p className="text-xs text-muted-foreground">{t.type} · {formatCurrency(t.amount)}</p>
+                    <p className="text-xs text-muted-foreground">{new Date(t.createdAt).toLocaleString()}</p>
                     {t.errorMessage && (
-                      <p className="text-xs text-red-300 mt-1">Error: {t.errorMessage}</p>
+                      <p className="text-xs text-red-600 mt-1">Error: {t.errorMessage}</p>
                     )}
                   </div>
                   <div className="flex flex-col gap-2">
                     <Button size="sm" onClick={() => handleRetry(t.id)}
                       disabled={retrying === t.id}
-                      className="gap-1 bg-amber-600 hover:bg-amber-700 text-xs">
+                      className="gap-1 bg-amber-500 hover:bg-amber-700 text-xs">
                       <RefreshCw className="w-3 h-3" />
                       {retrying === t.id ? '...' : 'Retry'}
                     </Button>
                     <Button size="sm" onClick={() => handleMarkSynced(t.id)}
-                      className="gap-1 bg-slate-600 hover:bg-slate-500 text-xs">
+                      className="gap-1 bg-muted hover:bg-muted/80 text-xs">
                       <CheckCircle2 className="w-3 h-3" />
                       Resolve
                     </Button>
@@ -297,21 +297,21 @@ export default function OfflineModePage() {
 
       {/* Synced */}
       {synced.length > 0 && (
-        <Card className="bg-slate-800 border-slate-700">
+        <Card className="bg-card border-border">
           <CardHeader>
-            <CardTitle className="text-white">Synced Transactions</CardTitle>
-            <CardDescription className="text-slate-400">Last {Math.min(synced.length, 10)} synced</CardDescription>
+            <CardTitle className="text-foreground">Synced Transactions</CardTitle>
+            <CardDescription className="text-muted-foreground">Last {Math.min(synced.length, 10)} synced</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2 max-h-80 overflow-y-auto">
               {synced.slice(0, 10).map(t => (
-                <div key={t.id} className="flex items-center justify-between p-3 bg-slate-700 rounded-lg border border-green-700/40">
+                <div key={t.id} className="flex items-center justify-between p-3 bg-muted rounded-lg border border-green-700/40">
                   <div>
-                    <p className="font-semibold text-slate-100">{t.transactionRef}</p>
-                    <p className="text-xs text-slate-400">{t.type} · {formatCurrency(t.amount)}</p>
-                    <p className="text-xs text-slate-400">{new Date(t.createdAt).toLocaleString()}</p>
+                    <p className="font-semibold text-foreground">{t.transactionRef}</p>
+                    <p className="text-xs text-muted-foreground">{t.type} · {formatCurrency(t.amount)}</p>
+                    <p className="text-xs text-muted-foreground">{new Date(t.createdAt).toLocaleString()}</p>
                   </div>
-                  <Badge className="bg-green-600">Synced</Badge>
+                  <Badge className="bg-green-500">Synced</Badge>
                 </div>
               ))}
             </div>
@@ -320,8 +320,8 @@ export default function OfflineModePage() {
       )}
 
       {!loading && transactions.length === 0 && !error && (
-        <Card className="bg-slate-800 border-slate-700">
-          <CardContent className="py-12 text-center text-slate-400">
+        <Card className="bg-card border-border">
+          <CardContent className="py-12 text-center text-muted-foreground">
             <CheckCircle2 className="w-10 h-10 mx-auto mb-3 text-green-500 opacity-60" />
             <p className="font-medium">All clear — no pending transactions.</p>
             <p className="text-sm mt-1">Everything is in sync.</p>
@@ -330,15 +330,15 @@ export default function OfflineModePage() {
       )}
 
       {/* Info box */}
-      <Card className="bg-slate-800 border-slate-700">
+      <Card className="bg-card border-border">
         <CardHeader>
-          <CardTitle className="text-white">How This Works</CardTitle>
+          <CardTitle className="text-foreground">How This Works</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2 text-sm text-slate-300">
+        <CardContent className="space-y-2 text-sm text-foreground/75">
           <p>• Transactions saved to Supabase appear here with their sync status</p>
-          <p>• <span className="text-amber-300 font-medium">Pending</span> — recorded but not yet fully processed</p>
-          <p>• <span className="text-red-300 font-medium">Failed</span> — had an error; use Retry or Resolve to fix</p>
-          <p>• <span className="text-green-300 font-medium">Synced</span> — successfully saved and processed</p>
+          <p>• <span className="text-amber-700 font-medium">Pending</span> — recorded but not yet fully processed</p>
+          <p>• <span className="text-red-600 font-medium">Failed</span> — had an error; use Retry or Resolve to fix</p>
+          <p>• <span className="text-green-700 font-medium">Synced</span> — successfully saved and processed</p>
           <p>• Data is stored in Supabase and visible on all devices simultaneously</p>
         </CardContent>
       </Card>

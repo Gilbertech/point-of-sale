@@ -33,14 +33,14 @@ interface SplitTransaction {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const METHOD_COLORS: Record<string, string> = {
-  cash:   'bg-green-600',
+  cash:   'bg-green-500',
   card:   'bg-blue-600',
-  check:  'bg-amber-600',
-  mobile: 'bg-violet-600',
+  check:  'bg-amber-500',
+  mobile: 'bg-secondary',
 };
 
 function methodColor(method: string) {
-  return METHOD_COLORS[method.toLowerCase()] ?? 'bg-slate-600';
+  return METHOD_COLORS[method.toLowerCase()] ?? 'bg-muted-foreground/20';
 }
 
 function downloadCSV(content: string, filename: string) {
@@ -168,21 +168,21 @@ export default function SplitPaymentsPage() {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6 space-y-6">
+    <div className="min-h-screen bg-background p-6 space-y-6">
 
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-400 to-violet-400">
+          <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-primary via-accent to-secondary">
             Split Payments
           </h1>
-          <p className="text-slate-400 mt-2">Track multi-method payment transactions</p>
+          <p className="text-muted-foreground mt-2">Track multi-method payment transactions</p>
         </div>
         <Button
           onClick={load}
           variant="outline"
           size="sm"
-          className="gap-2 border-slate-600 text-slate-300 hover:bg-slate-700"
+          className="gap-2 border-border text-foreground/75 hover:bg-muted"
           disabled={loading}
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -192,7 +192,7 @@ export default function SplitPaymentsPage() {
 
       {/* Error banner */}
       {error && (
-        <div className="p-3 rounded-lg bg-red-900/40 border border-red-700 text-red-300 text-sm">
+        <div className="p-3 rounded-lg bg-red-50 border border-red-300 text-red-600 text-sm">
           ⚠ {error} — Run <code className="font-mono text-xs">split-payments-sessions-setup.sql</code> in Supabase if the table doesn't exist yet.
         </div>
       )}
@@ -205,14 +205,14 @@ export default function SplitPaymentsPage() {
           { label: 'Average',            value: formatCurrency(stats.avg),    sub: 'Per transaction', color: 'violet', Icon: TrendingUp    },
           { label: 'Completed',          value: stats.completed,        sub: 'Fully paid',      color: 'blue',   Icon: CheckCircle2  },
         ].map(({ label, value, sub, color, Icon }) => (
-          <Card key={label} className={`bg-gradient-to-br from-${color}-950 to-${color}-900 border-${color}-800`}>
+          <Card key={label} className={`bg-gradient-to-br from-${color}-50 to-${color}-100 border-${color}-200`}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-slate-200">{label}</CardTitle>
-              <Icon className={`h-5 w-5 text-${color}-400`} />
+              <CardTitle className="text-sm font-medium text-foreground/90">{label}</CardTitle>
+              <Icon className={`h-5 w-5 text-${color}-600`} />
             </CardHeader>
             <CardContent>
-              <div className={`text-2xl font-bold text-${color}-300`}>{value}</div>
-              <p className={`text-xs text-${color}-400 mt-1`}>{sub}</p>
+              <div className={`text-2xl font-bold text-${color}-700`}>{value}</div>
+              <p className={`text-xs text-${color}-600 mt-1`}>{sub}</p>
             </CardContent>
           </Card>
         ))}
@@ -220,18 +220,18 @@ export default function SplitPaymentsPage() {
 
       {/* Method breakdown */}
       {Object.keys(stats.byMethod).length > 0 && (
-        <Card className="bg-slate-800 border-slate-700">
+        <Card className="bg-card border-border">
           <CardHeader>
-            <CardTitle className="text-white">Payment Methods</CardTitle>
-            <CardDescription className="text-slate-400">Breakdown by payment method</CardDescription>
+            <CardTitle className="text-foreground">Payment Methods</CardTitle>
+            <CardDescription className="text-muted-foreground">Breakdown by payment method</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
               {Object.entries(stats.byMethod).map(([method, data]) => (
-                <div key={method} className="p-3 bg-slate-700 rounded-lg border border-slate-600">
+                <div key={method} className="p-3 bg-muted rounded-lg border border-border">
                   <Badge className={`${methodColor(method)} capitalize mb-2`}>{method}</Badge>
-                  <p className="font-bold text-slate-100 text-lg">{data.count}</p>
-                  <p className="text-xs text-slate-400">{formatCurrency(data.total)}</p>
+                  <p className="font-bold text-foreground text-lg">{data.count}</p>
+                  <p className="text-xs text-muted-foreground">{formatCurrency(data.total)}</p>
                 </div>
               ))}
             </div>
@@ -240,30 +240,30 @@ export default function SplitPaymentsPage() {
       )}
 
       {/* Filters + Export */}
-      <Card className="bg-slate-800 border-slate-700">
+      <Card className="bg-card border-border">
         <CardHeader>
-          <CardTitle className="text-white">Filters & Export</CardTitle>
+          <CardTitle className="text-foreground">Filters & Export</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="text-sm text-slate-300">From</label>
+              <label className="text-sm text-foreground/75">From</label>
               <input
                 type="date" value={dateFrom}
                 onChange={e => setDateFrom(e.target.value)}
-                className="mt-1 w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+                className="mt-1 w-full px-3 py-2 bg-muted border border-border rounded-md text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
             <div>
-              <label className="text-sm text-slate-300">To</label>
+              <label className="text-sm text-foreground/75">To</label>
               <input
                 type="date" value={dateTo}
                 onChange={e => setDateTo(e.target.value)}
-                className="mt-1 w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+                className="mt-1 w-full px-3 py-2 bg-muted border border-border rounded-md text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
             <div className="flex items-end">
-              <Button onClick={exportCSV} className="w-full gap-2 bg-violet-600 hover:bg-violet-700">
+              <Button onClick={exportCSV} className="w-full gap-2 bg-secondary hover:bg-secondary/90">
                 <Download className="w-4 h-4" />
                 Export Report
               </Button>
@@ -273,36 +273,36 @@ export default function SplitPaymentsPage() {
       </Card>
 
       {/* Transaction list */}
-      <Card className="bg-slate-800 border-slate-700">
+      <Card className="bg-card border-border">
         <CardHeader>
-          <CardTitle className="text-white">Transactions</CardTitle>
-          <CardDescription className="text-slate-400">
+          <CardTitle className="text-foreground">Transactions</CardTitle>
+          <CardDescription className="text-muted-foreground">
             Showing {filtered.length} split payment transactions
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-2 max-h-96 overflow-y-auto">
             {loading ? (
-              <div className="text-center py-8 text-slate-400 flex items-center justify-center gap-2">
+              <div className="text-center py-8 text-muted-foreground flex items-center justify-center gap-2">
                 <RefreshCw className="w-4 h-4 animate-spin" /> Loading...
               </div>
             ) : filtered.length === 0 ? (
-              <div className="text-center py-8 text-slate-400">
+              <div className="text-center py-8 text-muted-foreground">
                 {error ? 'Could not load transactions.' : 'No split payment transactions found.'}
               </div>
             ) : (
               filtered.map(t => (
-                <div key={t.id} className="p-3 bg-slate-700 rounded-lg border border-slate-600">
+                <div key={t.id} className="p-3 bg-muted rounded-lg border border-border">
                   <div className="flex items-center justify-between mb-2">
                     <div>
-                      <p className="font-bold text-slate-100">
+                      <p className="font-bold text-foreground">
                         Transaction {t.transactionId.substring(0, 8)}
                       </p>
-                      <p className="text-xs text-slate-400">
+                      <p className="text-xs text-muted-foreground">
                         {new Date(t.createdAt).toLocaleString()}
                       </p>
                     </div>
-                    <Badge className={t.status === 'completed' ? 'bg-green-600' : 'bg-amber-600'}>
+                    <Badge className={t.status === 'completed' ? 'bg-green-500' : 'bg-amber-500'}>
                       {t.status}
                     </Badge>
                   </div>
@@ -313,7 +313,7 @@ export default function SplitPaymentsPage() {
                       </Badge>
                     ))}
                   </div>
-                  <p className="text-sm font-semibold text-cyan-300 mt-2">
+                  <p className="text-sm font-semibold text-cyan-700 mt-2">
                     Total: {formatCurrency(t.totalAmount)}
                   </p>
                 </div>

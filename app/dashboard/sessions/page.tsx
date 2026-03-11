@@ -171,21 +171,21 @@ export default function SessionsPage() {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6 space-y-6">
+    <div className="min-h-screen bg-background p-6 space-y-6">
 
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-violet-400 via-cyan-400 to-pink-400">
+          <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-secondary via-primary to-accent">
             Session Management
           </h1>
-          <p className="text-slate-400 mt-2">Track active sessions and user activity</p>
+          <p className="text-muted-foreground mt-2">Track active sessions and user activity</p>
         </div>
         <Button
           onClick={load}
           variant="outline"
           size="sm"
-          className="gap-2 border-slate-600 text-slate-300 hover:bg-slate-700"
+          className="gap-2 border-border text-foreground/75 hover:bg-muted"
           disabled={loading}
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -195,13 +195,13 @@ export default function SessionsPage() {
 
       {/* Alerts */}
       {error && (
-        <div className="p-3 rounded-lg bg-red-900/40 border border-red-700 text-red-300 text-sm">
+        <div className="p-3 rounded-lg bg-red-50 border border-red-300 text-red-600 text-sm">
           ⚠ {error} — Run <code className="font-mono text-xs">split-payments-sessions-setup.sql</code> in Supabase if the table doesn't exist yet.
         </div>
       )}
       {successMsg && (
-        <Alert className="bg-green-900/30 border-green-700">
-          <AlertDescription className="text-green-300">{successMsg}</AlertDescription>
+        <Alert className="bg-green-50 border-green-300">
+          <AlertDescription className="text-green-700">{successMsg}</AlertDescription>
         </Alert>
       )}
 
@@ -213,14 +213,14 @@ export default function SessionsPage() {
           { label: "Today's Sessions", value: stats.today,  sub: 'Sessions today', color: 'amber',  Icon: Users       },
           { label: 'Avg Duration',     value: minutesToDuration(stats.avgMins), sub: 'Average session', color: 'green', Icon: Activity },
         ].map(({ label, value, sub, color, Icon }) => (
-          <Card key={label} className={`bg-gradient-to-br from-${color}-950 to-${color}-900 border-${color}-800`}>
+          <Card key={label} className={`bg-gradient-to-br from-${color}-50 to-${color}-100 border-${color}-200`}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-slate-200">{label}</CardTitle>
-              <Icon className={`h-5 w-5 text-${color}-400`} />
+              <CardTitle className="text-sm font-medium text-foreground/90">{label}</CardTitle>
+              <Icon className={`h-5 w-5 text-${color}-600`} />
             </CardHeader>
             <CardContent>
-              <div className={`text-2xl font-bold text-${color}-300`}>{value}</div>
-              <p className={`text-xs text-${color}-400 mt-1`}>{sub}</p>
+              <div className={`text-2xl font-bold text-${color}-700`}>{value}</div>
+              <p className={`text-xs text-${color}-600 mt-1`}>{sub}</p>
             </CardContent>
           </Card>
         ))}
@@ -228,19 +228,19 @@ export default function SessionsPage() {
 
       {/* Active sessions */}
       {active.length > 0 && (
-        <Card className="bg-slate-800 border-slate-700">
+        <Card className="bg-card border-border">
           <CardHeader>
-            <CardTitle className="text-white">Active Sessions</CardTitle>
-            <CardDescription className="text-slate-400">Currently logged in users</CardDescription>
+            <CardTitle className="text-foreground">Active Sessions</CardTitle>
+            <CardDescription className="text-muted-foreground">Currently logged in users</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
               {active.map(s => (
-                <div key={s.id} className="flex items-center justify-between p-3 bg-slate-700 rounded-lg border border-slate-600">
+                <div key={s.id} className="flex items-center justify-between p-3 bg-muted rounded-lg border border-border">
                   <div>
-                    <p className="font-semibold text-slate-100">{s.userName}</p>
-                    <p className="text-xs text-slate-400 capitalize">{s.userRole}</p>
-                    <p className="text-xs text-slate-400">
+                    <p className="font-semibold text-foreground">{s.userName}</p>
+                    <p className="text-xs text-muted-foreground capitalize">{s.userRole}</p>
+                    <p className="text-xs text-muted-foreground">
                       Logged in: {new Date(s.loginAt).toLocaleTimeString()} · Activities: {s.activityCount}
                     </p>
                   </div>
@@ -248,7 +248,7 @@ export default function SessionsPage() {
                     size="sm"
                     onClick={() => handleEndSession(s.id)}
                     disabled={endingId === s.id}
-                    className="gap-2 bg-red-600 hover:bg-red-700"
+                    className="gap-2 bg-destructive hover:bg-destructive/90"
                   >
                     <LogOut className="w-4 h-4" />
                     {endingId === s.id ? 'Ending...' : 'End Session'}
@@ -261,13 +261,13 @@ export default function SessionsPage() {
       )}
 
       {/* Export */}
-      <Card className="bg-slate-800 border-slate-700">
+      <Card className="bg-card border-border">
         <CardHeader>
-          <CardTitle className="text-white">Reports & Export</CardTitle>
-          <CardDescription className="text-slate-400">Download session logs</CardDescription>
+          <CardTitle className="text-foreground">Reports & Export</CardTitle>
+          <CardDescription className="text-muted-foreground">Download session logs</CardDescription>
         </CardHeader>
         <CardContent>
-          <Button onClick={exportSessions} className="gap-2 bg-violet-600 hover:bg-violet-700 text-white">
+          <Button onClick={exportSessions} className="gap-2 bg-secondary hover:bg-secondary/90 text-foreground">
             <Download className="w-4 h-4" />
             Export Session Report
           </Button>
@@ -275,43 +275,43 @@ export default function SessionsPage() {
       </Card>
 
       {/* Recent sessions table */}
-      <Card className="bg-slate-800 border-slate-700">
+      <Card className="bg-card border-border">
         <CardHeader>
-          <CardTitle className="text-white">Recent Sessions</CardTitle>
-          <CardDescription className="text-slate-400">Last 20 sessions</CardDescription>
+          <CardTitle className="text-foreground">Recent Sessions</CardTitle>
+          <CardDescription className="text-muted-foreground">Last 20 sessions</CardDescription>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="text-center py-8 text-slate-400 flex items-center justify-center gap-2">
+            <div className="text-center py-8 text-muted-foreground flex items-center justify-center gap-2">
               <RefreshCw className="w-4 h-4 animate-spin" /> Loading...
             </div>
           ) : sessions.length === 0 ? (
-            <div className="text-center py-8 text-slate-400">
+            <div className="text-center py-8 text-muted-foreground">
               No sessions recorded yet.
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="border-b border-slate-600">
+                <thead className="border-b border-border">
                   <tr>
                     {['User', 'Role', 'Login Time', 'Duration', 'Status', 'Activities'].map(h => (
-                      <th key={h} className="text-left py-2 text-slate-300 pr-4">{h}</th>
+                      <th key={h} className="text-left py-2 text-foreground/75 pr-4">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {sessions.slice(0, 20).map(s => (
-                    <tr key={s.id} className="border-b border-slate-700">
-                      <td className="py-2 text-slate-200 pr-4">{s.userName}</td>
-                      <td className="py-2 text-slate-400 pr-4 capitalize">{s.userRole}</td>
-                      <td className="py-2 text-slate-400 pr-4">{new Date(s.loginAt).toLocaleString()}</td>
-                      <td className="py-2 text-slate-400 pr-4">{minutesToDuration(s.durationMinutes)}</td>
+                    <tr key={s.id} className="border-b border-border">
+                      <td className="py-2 text-foreground/90 pr-4">{s.userName}</td>
+                      <td className="py-2 text-muted-foreground pr-4 capitalize">{s.userRole}</td>
+                      <td className="py-2 text-muted-foreground pr-4">{new Date(s.loginAt).toLocaleString()}</td>
+                      <td className="py-2 text-muted-foreground pr-4">{minutesToDuration(s.durationMinutes)}</td>
                       <td className="py-2 pr-4">
-                        <Badge className={s.status === 'active' ? 'bg-green-600' : 'bg-gray-600'}>
+                        <Badge className={s.status === 'active' ? 'bg-green-500' : 'bg-muted-foreground/40'}>
                           {s.status}
                         </Badge>
                       </td>
-                      <td className="py-2 text-slate-200">{s.activityCount}</td>
+                      <td className="py-2 text-foreground/90">{s.activityCount}</td>
                     </tr>
                   ))}
                 </tbody>
