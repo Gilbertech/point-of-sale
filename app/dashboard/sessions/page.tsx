@@ -78,17 +78,19 @@ export default function SessionsPage() {
 
       if (err) { setError(err.message); return; }
 
-      // Fetch names separately from app_users (no FK join needed)
+      // Fetch names + roles separately from app_users (no FK join needed)
       const userIds = [...new Set((data || []).map((r: any) => r.user_id))];
       let nameMap: Record<string, string> = {};
+      let roleMap: Record<string, string> = {};
       if (userIds.length > 0) {
         const { data: users } = await supabase
           .from('app_users')
-          .select('id, first_name, last_name')
+          .select('id, first_name, last_name, role')
           .in('id', userIds);
         if (users) {
           users.forEach((u: any) => {
             nameMap[u.id] = `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() || u.id;
+            roleMap[u.id] = u.role ?? 'staff';
           });
         }
       }
@@ -97,7 +99,7 @@ export default function SessionsPage() {
         id:              row.id,
         userId:          row.user_id,
         userName:        nameMap[row.user_id] ?? row.user_id,
-        userRole:        'staff',
+        userRole:        roleMap[row.user_id] ?? 'staff',
         storeId:         row.store_id ?? null,
         loginAt:         row.login_at,
         logoutAt:        row.logout_at ?? null,
@@ -256,7 +258,7 @@ export default function SessionsPage() {
           <CardHeader>
             <CardTitle className="text-foreground">Active Sessions</CardTitle>
             <CardDescription className="text-muted-foreground">
-              Currently logged in users — only admins can force-end sessions
+              Currently logged in users — only Super Admin / Admin can force-end sessions
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -265,7 +267,7 @@ export default function SessionsPage() {
                 <div key={s.id} className="flex items-center justify-between p-3 bg-muted rounded-lg border border-border">
                   <div>
                     <p className="font-semibold text-foreground">{s.userName}</p>
-                    <p className="text-xs text-muted-foreground capitalize">{s.userRole}</p>
+                    <p className="text-xs text-muted-foreground capitalize">{s.userRole.replace(/_/g, ' ')}</p>
                     <p className="text-xs text-muted-foreground">
                       Logged in: {new Date(s.loginAt).toLocaleTimeString()} · Activities: {s.activityCount}
                     </p>
@@ -334,7 +336,7 @@ export default function SessionsPage() {
                   {sessions.slice(0, 20).map(s => (
                     <tr key={s.id} className="border-b border-border">
                       <td className="py-2 text-foreground/90 pr-4">{s.userName}</td>
-                      <td className="py-2 text-muted-foreground pr-4 capitalize">{s.userRole}</td>
+                      <td className="py-2 text-muted-foreground pr-4 capitalize">{s.userRole.replace(/_/g, ' ')}</td>
                       <td className="py-2 text-muted-foreground pr-4">{new Date(s.loginAt).toLocaleString()}</td>
                       <td className="py-2 text-muted-foreground pr-4">{minutesToDuration(s.durationMinutes)}</td>
                       <td className="py-2 pr-4">
