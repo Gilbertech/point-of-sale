@@ -61,11 +61,7 @@ export default function CashDrawerPage() {
     try {
       const { data, error: err } = await supabase
         .from('cash_drawer_sessions')
-        .select(`
-          id, cashier_id, store_id, opening_amount, closing_amount,
-          variance, status, notes, opened_at, closed_at,
-          app_users ( first_name, last_name )
-        `)
+        .select('id, cashier_id, cashier_name, store_id, opening_amount, closing_amount, variance, status, notes, opened_at, closed_at')
         .eq('store_id', storeId)
         .order('opened_at', { ascending: false })
         .limit(50);
@@ -75,9 +71,7 @@ export default function CashDrawerPage() {
       const mapped: DrawerSession[] = (data || []).map((row: any) => ({
         id:            row.id,
         cashierId:     row.cashier_id,
-        cashierName:   row.app_users
-          ? `${row.app_users.first_name ?? ''} ${row.app_users.last_name ?? ''}`.trim()
-          : row.cashier_id,
+        cashierName:   row.cashier_name ?? row.cashier_id,
         storeId:       row.store_id,
         openingAmount: row.opening_amount ?? 0,
         closingAmount: row.closing_amount ?? null,
@@ -111,19 +105,18 @@ export default function CashDrawerPage() {
     setSaving(true);
     setError('');
     try {
+      const cashierName = `${user.firstName} ${user.lastName}`.trim();
+
       const { data, error: err } = await supabase
         .from('cash_drawer_sessions')
         .insert([{
           cashier_id:     user.id,
+          cashier_name:   cashierName,
           store_id:       storeId,
           opening_amount: Number(openingAmount),
           status:         'open',
         }])
-        .select(`
-          id, cashier_id, store_id, opening_amount, closing_amount,
-          variance, status, notes, opened_at, closed_at,
-          app_users ( first_name, last_name )
-        `)
+        .select('id, cashier_id, cashier_name, store_id, opening_amount, closing_amount, variance, status, notes, opened_at, closed_at')
         .single();
 
       if (err) { setError(err.message); return; }
@@ -131,9 +124,7 @@ export default function CashDrawerPage() {
       const newDrawer: DrawerSession = {
         id:            data.id,
         cashierId:     data.cashier_id,
-        cashierName:   data.app_users
-          ? `${data.app_users.first_name ?? ''} ${data.app_users.last_name ?? ''}`.trim()
-          : data.cashier_id,
+        cashierName:   data.cashier_name ?? cashierName,
         storeId:       data.store_id,
         openingAmount: data.opening_amount,
         closingAmount: null,

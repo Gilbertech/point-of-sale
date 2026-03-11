@@ -64,32 +64,25 @@ export default function SessionsPage() {
     try {
       const { data, error: err } = await supabase
         .from('user_sessions')
-        .select(`
-          id, user_id, login_at, logout_at, duration_minutes,
-          status, logout_reason, activity_count, store_id,
-          app_users ( first_name, last_name, role )
-        `)
+        .select('id, user_id, user_name, login_at, logout_at, duration_minutes, status, logout_reason, activity_count, store_id')
         .order('login_at', { ascending: false })
         .limit(200);
 
       if (err) { setError(err.message); return; }
 
-      setSessions((data || []).map((row: any) => {
-        const u = row.app_users;
-        return {
-          id:              row.id,
-          userId:          row.user_id,
-          userName:        u ? `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() || row.user_id : row.user_id,
-          userRole:        u?.role ?? 'unknown',
-          storeId:         row.store_id ?? null,
-          loginAt:         row.login_at,
-          logoutAt:        row.logout_at ?? null,
-          durationMinutes: row.duration_minutes ?? null,
-          status:          row.status ?? 'ended',
-          logoutReason:    row.logout_reason ?? null,
-          activityCount:   row.activity_count ?? 0,
-        };
-      }));
+      setSessions((data || []).map((row: any) => ({
+        id:              row.id,
+        userId:          row.user_id,
+        userName:        row.user_name ?? row.user_id,
+        userRole:        'staff',
+        storeId:         row.store_id ?? null,
+        loginAt:         row.login_at,
+        logoutAt:        row.logout_at ?? null,
+        durationMinutes: row.duration_minutes ?? null,
+        status:          row.status ?? 'ended',
+        logoutReason:    row.logout_reason ?? null,
+        activityCount:   row.activity_count ?? 0,
+      })));
     } catch (e) {
       setError('Failed to load session data.');
       console.error(e);

@@ -54,12 +54,22 @@ let _sessionRowId: string | null = null;
 
 async function startSessionRow(userId: string, storeId: string | null) {
   try {
+    const { data: meData } = await supabase
+      .from('app_users')
+      .select('first_name, last_name')
+      .eq('id', userId)
+      .single();
+    const userName = meData
+      ? `${meData.first_name ?? ''} ${meData.last_name ?? ''}`.trim()
+      : userId;
+
     const { data, error } = await supabase
       .from('user_sessions')
       .insert([{
-        user_id:  userId,
-        store_id: storeId ?? null,
-        status:   'active',
+        user_id:   userId,
+        user_name: userName,
+        store_id:  storeId ?? null,
+        status:    'active',
       }])
       .select('id')
       .single();
