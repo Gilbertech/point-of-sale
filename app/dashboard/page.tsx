@@ -313,33 +313,6 @@ function CustomerSupportView() {
   );
 }
 
-// ─── Stat Card ────────────────────────────────────────────────────────────────
-function StatCard({ label, value, sub, icon, trend, trendUp }: {
-  label: string; value: string | number; sub: string;
-  icon: React.ReactNode; trend?: string; trendUp?: boolean;
-}) {
-  return (
-    <div className="bg-card border border-border rounded-2xl p-5 flex flex-col gap-3 hover:shadow-md transition-shadow">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{label}</p>
-        <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center text-primary">{icon}</div>
-      </div>
-      <div>
-        <p className="text-2xl font-bold text-foreground leading-none">{value}</p>
-        <div className="flex items-center gap-2 mt-1.5">
-          {trend && (
-            <span className={`flex items-center gap-0.5 text-xs font-semibold ${trendUp ? 'text-emerald-600' : 'text-red-500'}`}>
-              {trendUp ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-              {trend}
-            </span>
-          )}
-          <p className="text-xs text-muted-foreground">{sub}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Staff Dashboard ──────────────────────────────────────────────────────────
 function StaffDashboardView() {
   const { currentStore } = useStore();
@@ -368,7 +341,7 @@ function StaffDashboardView() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // ── Derived data ─────────────────────────────────────────────────────────────
+  // ── Derived data ──────────────────────────────────────────────────────────
 
   const stats = useMemo(() => {
     const totalSales = transactions.reduce((s, t) => s + t.total, 0);
@@ -460,47 +433,54 @@ function StaffDashboardView() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* ── Top hero bar ── */}
-      <div className="bg-gradient-to-r from-primary via-primary/90 to-primary/80 px-6 py-6">
+
+      {/* ── Clean header bar — no more orange flood ── */}
+      <div className="bg-card border-b border-border px-6 py-5">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <p className="text-primary-foreground/70 text-sm font-medium">{greeting}, {user?.firstName ?? 'there'} 👋</p>
-            <h1 className="text-2xl font-bold text-primary-foreground mt-0.5">
+            <p className="text-muted-foreground text-sm font-medium">
+              {greeting}, {user?.firstName ?? 'there'} 👋
+            </p>
+            <h1 className="text-2xl font-bold text-foreground mt-0.5">
               {currentStore?.name ?? 'All Stores'}
             </h1>
-            <p className="text-primary-foreground/60 text-xs mt-1">
+            <p className="text-muted-foreground text-xs mt-1">
               {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             {stats.lowStockCount > 0 && (
-              <div className="flex items-center gap-2 bg-red-500/20 border border-red-400/30 rounded-xl px-3 py-2">
-                <AlertCircle className="w-4 h-4 text-red-200" />
-                <span className="text-red-100 text-xs font-semibold">{stats.lowStockCount} low stock</span>
+              <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+                <AlertCircle className="w-4 h-4 text-red-500" />
+                <span className="text-red-600 text-xs font-semibold">{stats.lowStockCount} low stock</span>
               </div>
             )}
-            <div className="flex items-center gap-2 bg-white/10 border border-white/20 rounded-xl px-3 py-2">
-              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-primary-foreground text-xs font-semibold">Live</span>
+            <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
+              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-emerald-700 text-xs font-semibold">Live</span>
             </div>
-            <button onClick={() => loadData(true)} disabled={refreshing} className="bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl p-2 transition">
-              <RefreshCw className={`w-4 h-4 text-primary-foreground ${refreshing ? 'animate-spin' : ''}`} />
+            <button
+              onClick={() => loadData(true)}
+              disabled={refreshing}
+              className="bg-muted hover:bg-accent border border-border rounded-xl p-2 transition"
+            >
+              <RefreshCw className={`w-4 h-4 text-muted-foreground ${refreshing ? 'animate-spin' : ''}`} />
             </button>
           </div>
         </div>
 
-        {/* Today's quick stats inside hero */}
+        {/* Quick stat pills inside header */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
           {[
-            { label: "Today's Sales", value: formatCurrency(stats.todaySales), sub: `${stats.todayCount} transactions` },
-            { label: 'Total Revenue', value: formatCurrency(stats.totalSales), sub: 'All time' },
-            { label: 'Avg Order', value: formatCurrency(stats.avgOrder), sub: 'Per transaction' },
-            { label: 'Products', value: products.length, sub: `${stats.lowStockCount} low stock` },
+            { label: "Today's Sales",  value: formatCurrency(stats.todaySales),  sub: `${stats.todayCount} transactions`, valueColor: 'text-primary' },
+            { label: 'Total Revenue',  value: formatCurrency(stats.totalSales),  sub: 'All time',                         valueColor: 'text-emerald-600' },
+            { label: 'Avg Order',      value: formatCurrency(stats.avgOrder),    sub: 'Per transaction',                  valueColor: 'text-blue-600' },
+            { label: 'Products',       value: products.length,                   sub: `${stats.lowStockCount} low stock`, valueColor: 'text-foreground' },
           ].map(s => (
-            <div key={s.label} className="bg-white/10 border border-white/15 rounded-xl px-4 py-3">
-              <p className="text-primary-foreground/60 text-xs">{s.label}</p>
-              <p className="text-primary-foreground font-bold text-lg leading-tight mt-0.5">{s.value}</p>
-              <p className="text-primary-foreground/50 text-xs mt-0.5">{s.sub}</p>
+            <div key={s.label} className="bg-muted/50 border border-border rounded-xl px-4 py-3">
+              <p className="text-muted-foreground text-xs">{s.label}</p>
+              <p className={`font-bold text-lg leading-tight mt-0.5 ${s.valueColor}`}>{s.value}</p>
+              <p className="text-muted-foreground text-xs mt-0.5">{s.sub}</p>
             </div>
           ))}
         </div>
@@ -583,7 +563,9 @@ function StaffDashboardView() {
           <div className="bg-card border border-border rounded-2xl p-5">
             <div className="mb-4">
               <h2 className="font-semibold text-foreground">Today's Activity</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">Sales by hour — {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Sales by hour — {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              </p>
             </div>
             {hourly.every(h => h.sales === 0) ? (
               <div className="h-36 flex items-center justify-center text-muted-foreground text-sm">No sales recorded today yet</div>
@@ -643,7 +625,9 @@ function StaffDashboardView() {
               <a href="/dashboard/receipts" className="text-xs text-primary font-medium hover:underline">View all →</a>
             </div>
             {recentTxns.length === 0 ? (
-              <div className="text-center py-10 text-muted-foreground text-sm">No transactions yet for {currentStore?.name}</div>
+              <div className="text-center py-10 text-muted-foreground text-sm">
+                No transactions yet for {currentStore?.name}
+              </div>
             ) : (
               <div className="space-y-2">
                 {recentTxns.map(t => (
@@ -654,12 +638,16 @@ function StaffDashboardView() {
                       </div>
                       <div>
                         <p className="text-sm font-semibold text-foreground font-mono">{t.transactionNumber}</p>
-                        <p className="text-xs text-muted-foreground">{t.items?.length ?? 0} items · <span className="capitalize">{t.paymentMethod}</span></p>
+                        <p className="text-xs text-muted-foreground">
+                          {t.items?.length ?? 0} items · <span className="capitalize">{t.paymentMethod}</span>
+                        </p>
                       </div>
                     </div>
                     <div className="text-right">
                       <p className="font-bold text-foreground">{formatCurrency(t.total)}</p>
-                      <p className="text-xs text-muted-foreground">{new Date(t.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(t.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </p>
                     </div>
                   </div>
                 ))}
