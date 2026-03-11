@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/lib/auth-context';
+import { useStore } from '@/lib/store-context';
 import { supabase } from '@/lib/supabase/client';
 import { LogOut, Clock, AlertCircle, Download, RefreshCw, Users, Activity } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -49,6 +50,8 @@ function minutesToDuration(mins: number | null): string {
 
 export default function SessionsPage() {
   const { user } = useAuth();
+  const { currentStore } = useStore();
+  const storeId = currentStore?.id ?? null;
 
   const [sessions, setSessions]   = useState<UserSession[]>([]);
   const [loading, setLoading]     = useState(true);
@@ -62,18 +65,38 @@ export default function SessionsPage() {
     setLoading(true);
     setError('');
     try {
-      const { data, error: err } = await supabase
+      // Try with user_name column first; fall back to without if column missing
+      let query = supabase
         .from('user_sessions')
-        .select('id, user_id, user_name, login_at, logout_at, duration_minutes, status, logout_reason, activity_count, store_id')
+        .select('id, user_id, login_at, logout_at, duration_minutes, status, logout_reason, activity_count, store_id')
         .order('login_at', { ascending: false })
         .limit(200);
 
+      if (storeId) query = query.eq('store_id', storeId);
+
+      const { data, error: err } = await query;
+
       if (err) { setError(err.message); return; }
+
+      // Fetch names separately from app_users (no FK join needed)
+      const userIds = [...new Set((data || []).map((r: any) => r.user_id))];
+      let nameMap: Record<string, string> = {};
+      if (userIds.length > 0) {
+        const { data: users } = await supabase
+          .from('app_users')
+          .select('id, first_name, last_name')
+          .in('id', userIds);
+        if (users) {
+          users.forEach((u: any) => {
+            nameMap[u.id] = `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() || u.id;
+          });
+        }
+      }
 
       setSessions((data || []).map((row: any) => ({
         id:              row.id,
         userId:          row.user_id,
-        userName:        row.user_name ?? row.user_id,
+        userName:        nameMap[row.user_id] ?? row.user_id,
         userRole:        'staff',
         storeId:         row.store_id ?? null,
         loginAt:         row.login_at,
@@ -89,7 +112,7 @@ export default function SessionsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [storeId]);
 
   useEffect(() => { load(); }, [load]);
 

@@ -30,7 +30,6 @@ const NAVIGATION_ITEMS = [
   // ── Finance & Payments ────────────────────────────────────────────────────
   { label: 'Split Payments',   href: '/dashboard/split-payments',     icon: SplitSquareVertical,   roles: ['super_admin','admin','manager','cashier'] },
   { label: 'Cash Drawer',      href: '/dashboard/cash-drawer',        icon: Wallet,                roles: ['super_admin','admin','manager','cashier'] },
-  { label: 'Audit Logs',       href: '/dashboard/audit-logs',         icon: BookOpen,              roles: ['super_admin','admin','manager'] },
 
   // ── Operations ────────────────────────────────────────────────────────────
   { label: 'Sessions',         href: '/dashboard/sessions',           icon: MonitorCheck,          roles: ['super_admin','admin','manager'] },

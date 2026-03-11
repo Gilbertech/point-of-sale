@@ -59,19 +59,35 @@ export default function CashDrawerPage() {
     setLoading(true);
     setError('');
     try {
+      // Select without cashier_name in case column doesn't exist yet
       const { data, error: err } = await supabase
         .from('cash_drawer_sessions')
-        .select('id, cashier_id, cashier_name, store_id, opening_amount, closing_amount, variance, status, notes, opened_at, closed_at')
+        .select('id, cashier_id, store_id, opening_amount, closing_amount, variance, status, notes, opened_at, closed_at')
         .eq('store_id', storeId)
         .order('opened_at', { ascending: false })
         .limit(50);
 
       if (err) { setError(err.message); return; }
 
+      // Fetch cashier names separately (avoids FK join issues)
+      const cashierIds = [...new Set((data || []).map((r: any) => r.cashier_id))];
+      let nameMap: Record<string, string> = {};
+      if (cashierIds.length > 0) {
+        const { data: users } = await supabase
+          .from('app_users')
+          .select('id, first_name, last_name')
+          .in('id', cashierIds);
+        if (users) {
+          users.forEach((u: any) => {
+            nameMap[u.id] = `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() || u.id;
+          });
+        }
+      }
+
       const mapped: DrawerSession[] = (data || []).map((row: any) => ({
         id:            row.id,
         cashierId:     row.cashier_id,
-        cashierName:   row.cashier_name ?? row.cashier_id,
+        cashierName:   nameMap[row.cashier_id] ?? row.cashier_id,
         storeId:       row.store_id,
         openingAmount: row.opening_amount ?? 0,
         closingAmount: row.closing_amount ?? null,
@@ -111,12 +127,11 @@ export default function CashDrawerPage() {
         .from('cash_drawer_sessions')
         .insert([{
           cashier_id:     user.id,
-          cashier_name:   cashierName,
           store_id:       storeId,
           opening_amount: Number(openingAmount),
           status:         'open',
         }])
-        .select('id, cashier_id, cashier_name, store_id, opening_amount, closing_amount, variance, status, notes, opened_at, closed_at')
+        .select('id, cashier_id, store_id, opening_amount, closing_amount, variance, status, notes, opened_at, closed_at')
         .single();
 
       if (err) { setError(err.message); return; }
@@ -124,7 +139,7 @@ export default function CashDrawerPage() {
       const newDrawer: DrawerSession = {
         id:            data.id,
         cashierId:     data.cashier_id,
-        cashierName:   data.cashier_name ?? cashierName,
+        cashierName:   cashierName,
         storeId:       data.store_id,
         openingAmount: data.opening_amount,
         closingAmount: null,
